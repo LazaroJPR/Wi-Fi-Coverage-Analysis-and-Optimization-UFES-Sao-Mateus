@@ -1,8 +1,9 @@
 # Análise e Otimização da Cobertura Wi-Fi - UFES São Mateus
 
-![UFES Logo](assets/images/UFES.png)
-
-Repositório oficial do TCC em Ciência da Computação sobre otimização da rede Wi-Fi no campus CEUNES/UFES.
+<div align="center">
+  <img src="Imagens/Outros/UFES.png" alt="UFES Logo" width="200" />
+  <p>Repositório oficial do TCC em Ciência da Computação sobre otimização da rede Wi-Fi no campus CEUNES/UFES.</p>
+</div>
 
 ## 📋 Sobre o Projeto
 
@@ -19,13 +20,13 @@ Este projeto visa analisar e melhorar a cobertura Wi-Fi no campus da UFES em Sã
 - Armazenamento de resultados em CSV e Google Sheets
 - Tecnologias: HTML5, CSS3, JavaScript, PHP, Python
 
-### 2. Modelo de Propagação de Sinal Wi-Fi
-Sistema avançado para análise da cobertura wireless baseado em:
+### 2. Conversor de Plantas para Grafos de Propagação
+Sistema para transformação de plantas arquitetônicas em modelos de rede:
 
-- 🏗️ Processamento de plantas arquitetônicas digitais  
-- 📡 Geração automática de grafos de propagação  
-- 🧱 Classificação inteligente de materiais construtivos  
-- 📶 Simulação física de propagação de ondas de rádio  
+- 🏗️ Processamento digital de plantas baixas  
+- 📡 Geração automática de grafos de navegação  
+- 🧱 Identificação de materiais construtivos  
+- 🖥️ Visualização da estrutura  
 
 **Parâmetros de Atenuação por Material:**
 
