@@ -9,11 +9,11 @@ Este módulo converte uma imagem de planta arquitetônica em um **grafo ponderad
 
 ### Planta de entrada
 
-![Planta de Exemplo](Imagens/Plantas%20Padronizadas/Salas%20Pequenas.jpg)
+![Planta de Exemplo](https://github.com/LazaroJPR/TCC/blob/main/Imagens/Plantas%20Padronizadas/Salas%20Pequenas.jpg)
 
 ### Grafo gerado
 
-![Grafo Gerado](Imagens/Grafos/Grafo%20-%20Salas%20Pequenas.png)
+![Grafo Gerado](https://github.com/LazaroJPR/TCC/blob/main/Imagens/Grafos/Grafo%20-%20Salas%20Pequenas.png)
 
 ## 🛠️ Tecnologias utilizadas
 
@@ -61,11 +61,11 @@ This module converts a **floor plan image** into a **weighted graph**, where nod
 
 ### Input Floor Plan
 
-![Example Floor Plan](Imagens/Plantas%20Padronizadas/Salas%20Pequenas.jpg)
+![Example Floor Plan](https://github.com/LazaroJPR/TCC/blob/main/Imagens/Plantas%20Padronizadas/Salas%20Pequenas.jpg)
 
 ### Generated Graph
 
-![Generated Graph](Imagens/Grafos/Grafo%20-%20Salas%20Pequenas.png)
+![Generated Graph](https://github.com/LazaroJPR/TCC/blob/main/Imagens/Grafos/Grafo%20-%20Salas%20Pequenas.png)
 
 ## 🛠️ Technologies Used
 
