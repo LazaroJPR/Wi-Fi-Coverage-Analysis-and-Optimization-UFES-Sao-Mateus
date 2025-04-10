@@ -15,6 +15,15 @@ Este módulo converte uma imagem de planta arquitetônica em um **grafo ponderad
 
 ![Grafo Gerado](https://github.com/LazaroJPR/TCC/blob/main/Imagens/Grafos/Grafo%20-%20Salas%20Pequenas.png)
 
+## 🧱 Parâmetros de Atenuação por Material
+
+| Material  | Cor Referência | Nível de Atenuação |
+|-----------|----------------|--------------------|
+| Concreto  | Azul           | 16.67              |
+| Janela    | Vermelho       | 7.00               |
+| Porta     | Verde          | 6.81               |
+| MDF       | Amarelo        | 4.00               |
+
 ## 🛠️ Tecnologias utilizadas
 
 - Python
@@ -66,6 +75,15 @@ This module converts a **floor plan image** into a **weighted graph**, where nod
 ### Generated Graph
 
 ![Generated Graph](https://github.com/LazaroJPR/TCC/blob/main/Imagens/Grafos/Grafo%20-%20Salas%20Pequenas.png)
+
+## 🧱 Attenuation Parameters by Material
+
+| Material  | Reference Color | Attenuation Level |
+|-----------|------------------|--------------------|
+| Concrete  | Blue             | 16.67              |
+| Window    | Red              | 7.00               |
+| Door      | Green            | 6.81               |
+| MDF       | Yellow           | 4.00               |
 
 ## 🛠️ Technologies Used
 
