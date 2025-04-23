@@ -29,15 +29,6 @@ Sistema para transformação de plantas arquitetônicas em modelos de rede:
 - 🧱 Identificação de materiais construtivos  
 - 🖥️ Visualização da estrutura  
 
-### Parâmetros de Atenuação por Material
-
-| Material  | Cor Referência | Peso | Nível de Atenuação |
-|-----------|----------------|------|---------------------|
-| Concreto  | Azul           | 10   | ⚠️ Alta (15–25 dB)  |
-| Janela    | Vermelho       | 8    | ◼️ Média (8–12 dB)  |
-| Porta     | Verde          | 4    | ▫️ Baixa (3–7 dB)   |
-| MDF       | Amarelo        | 5    | ▪️ Moderada (5–9 dB)|
-
 ## 📬 Contato
 
 **Autor:** Lázaro José Pedrosa dos Reis  
@@ -80,15 +71,6 @@ System to convert architectural floor plans into network models:
 - 📡 Automatic generation of navigation graphs  
 - 🧱 Identification of construction materials  
 - 🖥️ Structural visualization  
-
-### Material Attenuation Parameters
-
-| Material  | Reference Color | Weight | Attenuation Level     |
-|-----------|------------------|--------|------------------------|
-| Concrete  | Blue             | 10     | ⚠️ High (15–25 dB)     |
-| Window    | Red              | 8      | ◼️ Medium (8–12 dB)    |
-| Door      | Green            | 4      | ▫️ Low (3–7 dB)        |
-| MDF       | Yellow           | 5      | ▪️ Moderate (5–9 dB)   |
 
 ## 📬 Contact
 
