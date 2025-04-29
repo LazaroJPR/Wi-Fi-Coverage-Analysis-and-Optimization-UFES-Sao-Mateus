@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 import tkinter as tk
 from tkinter import filedialog
 import logging
+import json
 
 # Configuração básica do logging
 logging.basicConfig(
@@ -111,34 +112,51 @@ def iteration_task(
 
 class RouterOptimizer:
     def __init__(self):
-        self.rssi_threshold = -70       #RSSI mínimo a ser considerado como cobertura
-        self.tx_power = 23              # dBm || Potência do roteador
-        self.freq_mhz = 2400            # MHz || Frequência do WiFI
-        self.scale_factor = 2           # Escala de visualização do gráfico
-        self.distance_conversion = 0.5  # Fator de conversão de unidades para metros (0.5m por unidade)
-        self.max_iter = 20             # Número máximo de iterações para otimização
-        self.top_n = 10                 # Número de melhores soluções a serem mantidas
+        # Carregar configurações do config.json
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if os.path.isfile(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        else:
+            config = {}
 
-        self.weight_colors = {
-            16.67: 'blue',    # Parede (concreto)
-            7: 'red',         # Janela
-            6.81: 'green',    # Porta
-            4: 'yellow',      # MDF
-            1: 'gray'         # Passagem livre (corrigido de 'default' para 'gray')
-        }
-        logging.info("RouterOptimizer inicializado.")
+        self.rssi_threshold = config.get("rssi_threshold", -70)
+        self.tx_power = config.get("tx_power", 23)
+        self.freq_mhz = config.get("freq_mhz", 2400)
+        self.scale_factor = config.get("scale_factor", 2)
+        self.distance_conversion = config.get("distance_conversion", 0.5)
+        self.max_iter = config.get("max_iter", 20)
+        self.top_n = config.get("top_n", 10)
+        self.num_roteadores = config.get("num_roteadores", 1)
+        self.router_name = config.get("router_name", "Roteador")
+
+        weight_colors_cfg = config.get("weight_colors", {
+            "16.67": "blue",    # Parede (concreto)
+            "7": "red",         # Janela
+            "6.81": "green",    # Porta
+            "4": "yellow",      # MDF
+            "1": "gray"         # Passagem livre
+        })
+        self.weight_colors = {float(k): v for k, v in weight_colors_cfg.items()}
+
+        self.plot_save_path = config.get("plot_save_path", ".")
+
+        logging.info("RouterOptimizer inicializado com config.json.")
 
     def load_graph(self):
         """Carrega o grafo do usuário via diálogo Tkinter"""
         logging.info("Solicitando arquivo do grafo ao usuário...")
         root = tk.Tk()
+        root.call('tk', 'scaling', 1.0)
         root.withdraw()
-        graph_file = filedialog.askopenfilename(
-            title="Selecione o arquivo do grafo",
-            filetypes=[("GraphML files", "*.graphml"), ("Todos os arquivos", "*.*")]
-        )
-        root.destroy()  # <- Adicione esta linha para destruir o root imediatamente
-        plt.close('all')  # <- Garante que o contexto gráfico do Tkinter seja fechado antes de usar matplotlib
+        try:
+            graph_file = filedialog.askopenfilename(
+                title="Selecione o arquivo do grafo",
+                filetypes=[("Arquivos GraphML", "*.graphml"), ("Todos os arquivos", "*.*")]
+            )
+        finally:
+            root.destroy()
+
         if not graph_file:
             logging.error("Nenhum arquivo selecionado.")
             raise RuntimeError("Nenhum arquivo selecionado.")
@@ -146,29 +164,6 @@ class RouterOptimizer:
         G = nx.read_graphml(graph_file)
         logging.info(f"Grafo carregado com {len(G.nodes())} nós e {len(G.edges())} arestas.")
         return nx.relabel_nodes(G, {n: eval(n) for n in G.nodes()})
-
-    def show_graph(self, G, title="Grafo de Navegação"):
-        """Exibe o grafo com matplotlib"""
-        logging.info(f"Exibindo grafo: {title}")
-        scale_factor = self.scale_factor
-        pos = {n: (n[0] * scale_factor, n[1] * scale_factor) for n in G.nodes()}
-        plt.figure(figsize=(16, 12))
-
-        # Desenhar arestas
-        edge_colors = [self.weight_colors.get(G[u][v].get('weight', 1), 'black')
-                      for u, v in G.edges()]
-        nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=1.2, alpha=0.6)
-
-        # Desenhar nós
-        nx.draw_networkx_nodes(
-            G, pos, node_color='black',
-            node_size=20, edgecolors='white', linewidths=0.5
-        )
-
-        plt.title(title)
-        plt.axis('equal')
-        plt.axis('off')
-        plt.show()
 
     def calc_fspl(self, distance_m):
         """Calcula a perda de percurso no espaço livre"""
@@ -233,8 +228,8 @@ class RouterOptimizer:
         best_solutions = []
 
         # Seleção de nós candidatos
-        centrality = nx.degree_centrality(G)
-        top_central_nodes = sorted(centrality, key=centrality.get, reverse=True)[:len(nodes)//2]
+        centralidade = nx.degree_centrality(G)
+        top_central_nodes = sorted(centralidade, key=centralidade.get, reverse=True)[:len(nodes)//2]
         _, _, initial_rssi_values = self.evaluate_coverage(G, [])
         weak_nodes = [node for node, rssi in zip(nodes, initial_rssi_values)
                      if rssi < self.rssi_threshold]
@@ -277,12 +272,15 @@ class RouterOptimizer:
                 for iteration in range(total_iterations)
             ]
             for idx, future in enumerate(as_completed(futures), 1):
-                solution = future.result()
-                best_solutions.append(solution)
-                # Mantém apenas as top_n melhores
-                best_solutions = sorted(best_solutions, key=lambda x: x['score'], reverse=True)[:self.top_n]
-                if idx % 20 == 0 or idx == total_iterations:
-                    logging.info(f"Iterações concluídas: {idx}/{total_iterations}")
+                try:
+                    solution = future.result()
+                    best_solutions.append(solution)
+                    # Mantém apenas as top_n melhores
+                    best_solutions = sorted(best_solutions, key=lambda x: x['score'], reverse=True)[:self.top_n]
+                    if idx % 20 == 0 or idx == total_iterations:
+                        logging.info(f"Iterações concluídas: {idx}/{total_iterations}")
+                except Exception as e:
+                    logging.error(f"Erro durante a execução paralela na iteração {idx}: {e}")
 
         logging.info("Busca por melhores posições finalizada.")
         return best_solutions
@@ -316,18 +314,6 @@ class RouterOptimizer:
         
         return fig, ax
 
-    def plot_simulation(self, G, routers, coverage, avg_rssi, title=None):
-        """Visualiza a simulação com cobertura RSSI"""
-        if title is None:
-            title = f"Cobertura: {coverage:.1f}% | RSSI Médio: {avg_rssi:.1f} dBm"
-        logging.info(f"Plotando simulação: {title}")
-        fig, ax = self._create_base_plot(G, routers)
-        plt.colorbar(ax.collections[1], label='RSSI (dBm)')
-        plt.title(title)
-        plt.axis('equal')
-        plt.axis('off')
-        # plt.show()  # Removido para não exibir o gráfico
-
     def save_solution(self, solution, index, G):
         """Salva uma solução com plotagem e dados"""
         folder_name = f"solucao_{index}"
@@ -350,55 +336,54 @@ class RouterOptimizer:
             f.write(f"Posições: {solution['routers']}\n")
             f.write(f"Cobertura: {solution['coverage']:.1f}%\n")
             f.write(f"RSSI médio: {solution['avg_rssi']:.1f} dBm\n")
-            f.write(f"Score: {solution['score']:.2f}\n")
     
         return folder_name
 
     def run_optimization(self):
-        """Executa o processo de otimização para múltiplas quantidades de roteadores"""
+        """Executa o processo de otimização para a quantidade de roteadores definida no config"""
         logging.info("Iniciando processo de otimização de roteadores.")
-        print("\n=== OTIMIZAÇÃO DE ROTEADORES ===")
+        logging.info("=== OTIMIZAÇÃO DE ROTEADORES ===")
         G = self.load_graph()
-        print(f"Grafo carregado com {len(G.nodes())} nós")
-        self.show_graph(G, "Grafo de Navegação Original")
+        logging.info(f"Grafo carregado com {len(G.nodes())} nós")
 
-        for num_roteadores in range(2, 6):  # 2 até 5 roteadores
-            print(f"\n=== Testando com {num_roteadores} roteadores ===")
-            print(f"Roteador: Cisco AIR-AP-2802I-Z-K9-BR")
-            print(f"TX Power: {self.tx_power} dBm, Frequência: {self.freq_mhz/1000} GHz\n")
+        num_roteadores = getattr(self, "num_roteadores", None)
+        if num_roteadores is None:
+            # Para compatibilidade, tenta ler do config.json se não estiver como atributo
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if os.path.isfile(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                num_roteadores = config.get("num_roteadores", 1)
+            else:
+                num_roteadores = 1
 
-            logging.info(f"Otimização para {num_roteadores} roteadores iniciada.")
-            best_solutions = self.find_best_routers(G, num_roteadores)
+        logging.info(f"=== Testando com {num_roteadores} roteadores ===")
+        logging.info(f"Roteador: {self.router_name}")  # Alterado para usar o nome do config
+        logging.info(f"Potência TX: {self.tx_power} dBm, Frequência: {self.freq_mhz/1000} GHz")
 
-            zip_filename = f"melhores_solucoes_{num_roteadores}_roteadores.zip"
-            with zipfile.ZipFile(zip_filename, 'w') as zipf:
-                for idx, solution in enumerate(best_solutions, 1):
-                    print(f"\n--- Solução #{idx} ---")
-                    print(f"Posições: {solution['routers']}")
-                    print(f"Cobertura: {solution['coverage']:.1f}%")
-                    print(f"RSSI médio: {solution['avg_rssi']:.1f} dBm")
-                    print(f"Score: {solution['score']:.2f}")
+        logging.info(f"Otimização para {num_roteadores} roteadores iniciada.")
+        best_solutions = self.find_best_routers(G, num_roteadores)
 
-                    self.plot_simulation(
-                        G,
-                        solution['routers'],
-                        solution['coverage'],
-                        solution['avg_rssi'],
-                        title=f"Solução #{idx} - Cobertura: {solution['coverage']:.1f}%, RSSI Médio: {solution['avg_rssi']:.1f} dBm"
+        # Salva o zip na pasta definida em plot_save_path
+        zip_filename = os.path.join(self.plot_save_path, f"melhores_solucoes_{num_roteadores}_roteadores.zip")
+        with zipfile.ZipFile(zip_filename, 'w') as zipf:
+            for idx, solution in enumerate(best_solutions, 1):
+                logging.info(f"--- Solução #{idx} ---")
+                logging.info(f"Posições: {solution['routers']}")
+                logging.info(f"Cobertura: {solution['coverage']:.1f}%")
+                logging.info(f"RSSI médio: {solution['avg_rssi']:.1f} dBm")
+
+                folder_name = self.save_solution(solution, idx, G)
+                
+                for file in os.listdir(folder_name):
+                    zipf.write(
+                        os.path.join(folder_name, file),
+                        os.path.join(f'solucao_{idx}', file)
                     )
-                    # plt.show()  # Removido para não exibir o gráfico
+                
+                shutil.rmtree(folder_name)
 
-                    folder_name = self.save_solution(solution, idx, G)
-                    
-                    for file in os.listdir(folder_name):
-                        zipf.write(
-                            os.path.join(folder_name, file),
-                            os.path.join(f'solucao_{idx}', file)
-                        )
-                    
-                    shutil.rmtree(folder_name)
-
-            logging.info(f"Resultados compactados em {zip_filename} para {num_roteadores} roteadores.")
+        logging.info(f"Resultados compactados em {zip_filename} para {num_roteadores} roteadores.")
 
 if __name__ == "__main__":
     optimizer = RouterOptimizer()

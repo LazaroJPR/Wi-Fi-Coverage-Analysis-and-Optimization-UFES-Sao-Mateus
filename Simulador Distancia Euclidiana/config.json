@@ -1,0 +1,19 @@
+{
+    "rssi_threshold": -70,
+    "tx_power": 23,
+    "freq_mhz": 2400,
+    "scale_factor": 2,
+    "distance_conversion": 0.5,
+    "max_iter": 20,
+    "top_n": 10,
+    "weight_colors": {
+        "16.67": "blue",
+        "7": "red",
+        "6.81": "green",
+        "4": "yellow",
+        "1": "gray"
+    },
+    "plot_save_path": "C:\\Users\\lazar\\Desktop\\Nova pasta\\",
+    "num_roteadores": 1,
+    "router_name": "Cisco AIR-AP-2802I-Z-K9-BR"
+}
