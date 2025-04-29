@@ -7,9 +7,18 @@ import os
 import tkinter as tk
 from tkinter import filedialog
 import json
+import logging
+
+# Configuração básica do logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 class JpegToGraph:
     def __init__(self, config_path="c:\\Git\\TCC\\Criador de Grafos\\config.json"):
+        logging.info("Inicializando JpegToGraph com config: %s", config_path)
         # Carregar configurações do arquivo JSON
         self.config = self.load_config(config_path)
         self.cell_size = self.config.get("cell_size", 5)
@@ -33,14 +42,18 @@ class JpegToGraph:
 
     def load_config(self, config_path):
         if os.path.isfile(config_path):
+            logging.info("Carregando configurações de %s", config_path)
             with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
+        logging.warning("Arquivo de configuração não encontrado. Usando valores padrão.")
         return {}
 
     def load_image(self, image_path):
         """Carrega a imagem do caminho fornecido"""
+        logging.info("Carregando imagem: %s", image_path)
         img = cv2.imread(image_path)
         if img is None:
+            logging.error("Imagem não encontrada: %s", image_path)
             raise FileNotFoundError(f"Imagem não encontrada: {image_path}")
 
         self.image_filename = os.path.splitext(os.path.basename(image_path))[0]
@@ -49,10 +62,12 @@ class JpegToGraph:
             self.plot_save_dir,
             f"{self.image_filename}.png"
         )
+        logging.info("Imagem carregada com sucesso: %s", self.image_filename)
         return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     def show_image(self, img, title="Imagem"):
         """Exibe a imagem com matplotlib"""
+        logging.info("Exibindo imagem: %s", title)
         plt.figure(figsize=(10, 8))
         plt.imshow(img)
         plt.title(title)
@@ -69,6 +84,7 @@ class JpegToGraph:
 
     def create_color_masks(self, hsv_img):
         """Cria máscaras para cada intervalo de cores definido"""
+        logging.info("Criando máscaras de cor")
         masks = {
             color: self._create_color_mask(hsv_img, color)
             for color in ['azul', 'vermelho', 'verde', 'amarelo']
@@ -79,16 +95,20 @@ class JpegToGraph:
         for key in masks:
             masks[key] = cv2.morphologyEx(masks[key], cv2.MORPH_CLOSE, kernel, iterations=2)
             masks[key] = cv2.morphologyEx(masks[key], cv2.MORPH_OPEN, kernel, iterations=1)
+        logging.info("Máscaras de cor criadas")
         return masks
 
     def create_blockage_mask(self, img):
         """Cria máscara para áreas bloqueadas"""
+        logging.info("Criando máscara de bloqueio")
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         _, mask = cv2.threshold(gray, 5, 255, cv2.THRESH_BINARY_INV)
+        logging.info("Máscara de bloqueio criada")
         return mask
 
     def generate_graph_nodes(self, img_shape, blockage_mask):
         """Gera os nós do grafo baseado no grid e nas áreas não bloqueadas"""
+        logging.info("Gerando nós do grafo")
         h, w = img_shape[:2]
         nodes = []
         for y in range(0, h, self.cell_size):
@@ -98,6 +118,7 @@ class JpegToGraph:
                 if blockage_mask[center_y, center_x] == 0:  # Área não bloqueada
                     node = (x // self.cell_size, y // self.cell_size)
                     nodes.append(node)
+        logging.info("Total de nós gerados: %d", len(nodes))
         return nodes
 
     def check_edge_weights(self, point1, point2, hsv_img, blockage_mask):
@@ -119,6 +140,7 @@ class JpegToGraph:
 
     def build_graph(self, nodes, hsv_img, blockage_mask):
         """Constrói o grafo com nós e arestas"""
+        logging.info("Construindo o grafo")
         G = nx.Graph()
         G.add_nodes_from(nodes)
         # Direções para conexões (incluindo diagonais)
@@ -137,10 +159,13 @@ class JpegToGraph:
                     weight = self.check_edge_weights(point1, point2, hsv_img, blockage_mask)
                     if weight is not None:
                         G.add_edge(node, neighbor, weight=weight)
+        logging.info("Total de nós no grafo: %d", G.number_of_nodes())
+        logging.info("Total de arestas no grafo: %d", G.number_of_edges())
         return G
 
     def visualize_graph(self, G):
         """Visualiza o grafo com cores representando os pesos das arestas"""
+        logging.info("Visualizando o grafo")
         scale_factor = 2
         pos = {n: (n[0] * scale_factor, n[1] * scale_factor) for n in G.nodes()}
         plt.figure(figsize=(16, 12))
@@ -184,9 +209,9 @@ class JpegToGraph:
         
         if self.plot_save_path:
             plt.savefig(self.plot_save_path, bbox_inches='tight')
-            print(f"Plot salvo em: {self.plot_save_path}")
+            logging.info("Plot salvo em: %s", self.plot_save_path)
         else:
-            print("Caminho para salvar o plot não definido.")
+            logging.warning("Caminho para salvar o plot não definido.")
 
     def export_graph(self, G, filename=None):
         """Exporta o grafo no formato GraphML"""
@@ -196,9 +221,10 @@ class JpegToGraph:
             else:
                 filename = "grafo_navegacao.graphml"
         write_graphml(G, filename)
-        print(f"Grafo exportado como '{filename}'!")
+        logging.info("Grafo exportado como '%s'", filename)
 
 def main():
+    logging.info("Iniciando aplicação")
     root = tk.Tk()
     root.withdraw()
     image_path = filedialog.askopenfilename(
@@ -206,7 +232,7 @@ def main():
         filetypes=[("JPEG files", "*.jpg;*.jpeg"), ("All files", "*.*")]
     )
     if not image_path or not os.path.isfile(image_path):
-        print(f"Arquivo não encontrado ou seleção cancelada: {image_path}")
+        logging.error("Arquivo não encontrado ou seleção cancelada: %s", image_path)
         return
     processor = JpegToGraph()
 
@@ -229,6 +255,7 @@ def main():
 
     # Exibir todos os plots
     plt.show()
+    logging.info("Processamento finalizado")
 
 if __name__ == "__main__":
     main()
