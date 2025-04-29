@@ -19,7 +19,7 @@ logging.basicConfig(
 
 def neighbor_edges(args):
     """Função auxiliar para paralelizar a verificação de vizinhos e pesos (fora da classe)"""
-    node, nodes_set, cell_size, directions, hsv_img, blockage_mask, weight_mapping, check_edge_weights_func = args
+    node, nodes_set, cell_size, directions, hsv_img, blockage_mask, weight_mapping, check_edge_weights_func, hsv_color_ranges = args
     x, y = node
     edges = []
     for dx, dy in directions:
@@ -27,12 +27,12 @@ def neighbor_edges(args):
         if neighbor in nodes_set:
             point1 = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
             point2 = (neighbor[0] * cell_size + cell_size // 2, neighbor[1] * cell_size + cell_size // 2)
-            weight = check_edge_weights_func(point1, point2, hsv_img, blockage_mask, weight_mapping)
+            weight = check_edge_weights_func(point1, point2, hsv_img, blockage_mask, weight_mapping, hsv_color_ranges)
             if weight is not None:
                 edges.append((node, neighbor, weight))
     return edges
 
-def check_edge_weights(point1, point2, hsv_img, blockage_mask, weight_mapping):
+def check_edge_weights(point1, point2, hsv_img, blockage_mask, weight_mapping, hsv_color_ranges):
     """Determina o peso da aresta baseado nas cores ao longo da linha (função de módulo)"""
     mask = np.zeros((hsv_img.shape[0], hsv_img.shape[1]), dtype=np.uint8)
     cv2.line(mask, point1, point2, 255, thickness=3)
@@ -40,14 +40,7 @@ def check_edge_weights(point1, point2, hsv_img, blockage_mask, weight_mapping):
         return None  # Aresta bloqueada
     line_pixels = cv2.bitwise_and(hsv_img, hsv_img, mask=mask)
     total_pixels = np.count_nonzero(mask) + 1e-5
-    # Definição dos intervalos HSV para as cores
-    hsv_color_ranges = {
-        'azul': (np.array([100, 150, 50]), np.array([140, 255, 255])),
-        'vermelho1': (np.array([0, 100, 100]), np.array([10, 255, 255])),
-        'vermelho2': (np.array([160, 100, 100]), np.array([180, 255, 255])),
-        'verde': (np.array([36, 50, 50]), np.array([86, 255, 255])),
-        'amarelo': (np.array([20, 100, 100]), np.array([40, 255, 255]))
-    }
+    
     def _create_color_mask(hsv_img, color_name):
         if color_name == 'vermelho':
             mask1 = cv2.inRange(hsv_img, *hsv_color_ranges['vermelho1'])
@@ -55,6 +48,7 @@ def check_edge_weights(point1, point2, hsv_img, blockage_mask, weight_mapping):
             return cv2.bitwise_or(mask1, mask2)
         else:
             return cv2.inRange(hsv_img, *hsv_color_ranges[color_name])
+    
     color_proportions = {
         color: _create_color_mask(line_pixels, color)
         for color in ['azul', 'vermelho', 'verde', 'amarelo']
@@ -192,7 +186,8 @@ class JpegToGraph:
                       (1, 1), (1, -1), (-1, 1), (-1, -1)]
         nodes_set = set(nodes)
         args_list = [
-            (node, nodes_set, self.cell_size, directions, hsv_img, blockage_mask, self.weight_mapping, check_edge_weights)
+            (node, nodes_set, self.cell_size, directions, hsv_img, blockage_mask, 
+             self.weight_mapping, check_edge_weights, self.hsv_color_ranges)
             for node in nodes
         ]
         all_edges = []
