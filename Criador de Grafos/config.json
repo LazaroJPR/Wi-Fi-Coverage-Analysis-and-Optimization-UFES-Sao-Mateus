@@ -1,0 +1,11 @@
+{
+    "cell_size": 5,
+    "weight_mapping": {
+        "azul": 16.67,
+        "vermelho": 7,
+        "verde": 6.81,
+        "amarelo": 4,
+        "default": 1
+    },
+    "plot_save_path": "C:\\Users\\lazar\\Desktop\\Nova pasta\\"
+}
