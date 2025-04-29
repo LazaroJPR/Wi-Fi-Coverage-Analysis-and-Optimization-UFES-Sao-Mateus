@@ -47,8 +47,32 @@ Este módulo converte uma imagem de planta arquitetônica em um **grafo ponderad
 ## 📦 Como usar
 
 1. Suba uma imagem da planta com as cores padronizadas.
-2. O script processará a imagem, detectará os obstáculos e criará o grafo.
+2. Execute o script `Jpeg2Graph.py` para processar a imagem, detectar os obstáculos e criar o grafo:
+   ```bash
+   python Jpeg2Graph.py
+   ```
+   O caminho da imagem será solicitado por uma janela de seleção de arquivos.
 3. O grafo será renderizado sobre a imagem original com as arestas coloridas conforme o peso.
+
+### Configuração
+
+O arquivo `config.json` permite ajustar parâmetros do processamento, como o tamanho das células do grid, os pesos de atenuação para cada cor/material e o caminho para salvar as imagens geradas. Exemplo:
+```json
+{
+    "cell_size": 5,
+    "weight_mapping": {
+        "azul": 16.67,
+        "vermelho": 7,
+        "verde": 6.81,
+        "amarelo": 4,
+        "default": 1
+    },
+    "plot_save_path": "C:\\Caminho\\para\\salvar"
+}
+```
+- `cell_size`: tamanho do grid para discretização da planta.
+- `weight_mapping`: pesos de atenuação para cada cor/material.
+- `plot_save_path`: pasta onde as imagens do grafo e o grafo serão salvos.
 
 ## 🎯 Aplicações
 
@@ -108,8 +132,32 @@ This module converts a **floor plan image** into a **weighted graph**, where nod
 ## 📦 How to Use
 
 1. Upload a standardized color-coded floor plan image.
-2. The script processes the image, detects the obstacles, and builds the graph.
+2. Run the `Jpeg2Graph.py` script to process the image, detect obstacles, and build the graph:
+   ```bash
+   python Jpeg2Graph.py
+   ```
+   The image path will be requested via a file selection dialog.
 3. The graph is rendered over the original image with color-coded weighted edges.
+
+### Configuration
+
+The `config.json` file allows you to adjust processing parameters, such as grid cell size, attenuation weights for each color/material, and the path to save generated images. Example:
+```json
+{
+    "cell_size": 5,
+    "weight_mapping": {
+        "azul": 16.67,
+        "vermelho": 7,
+        "verde": 6.81,
+        "amarelo": 4,
+        "default": 1
+    },
+    "plot_save_path": "C:\\Path\\to\\save"
+}
+```
+- `cell_size`: grid size for discretizing the floor plan.
+- `weight_mapping`: attenuation weights for each color/material.
+- `plot_save_path`: folder where graph images and graph will be saved.
 
 ## 🎯 Applications
 
