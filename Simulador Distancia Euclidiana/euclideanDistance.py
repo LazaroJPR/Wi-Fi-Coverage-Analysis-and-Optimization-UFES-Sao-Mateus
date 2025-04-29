@@ -22,6 +22,22 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 
+def calc_fspl(distance_m, freq_mhz):
+    """Calcula a perda de percurso no espaço livre (FSPL)."""
+    if distance_m == 0:
+        return 0
+    distance_km = distance_m / 1000.0
+    return 20 * np.log10(distance_km) + 20 * np.log10(freq_mhz) + 32.44
+
+def get_path_and_loss(G, source, target):
+    """Calcula o caminho e a perda por obstáculos entre dois nós."""
+    try:
+        path = nx.shortest_path(G, source=source, target=target, weight='weight')
+        obstacle_loss = sum(G[p][q]['weight'] for p, q in zip(path[:-1], path[1:]))
+        return path, obstacle_loss
+    except (nx.NetworkXNoPath, KeyError):
+        return None, float('inf')
+
 def iteration_task(
     iteration,
     candidate_nodes_snapshot,
@@ -34,6 +50,7 @@ def iteration_task(
     distance_conversion,
     weight_colors
 ):
+    """Executa uma iteração de busca de roteadores em paralelo."""
     import numpy as np
     import networkx as nx
     import logging
@@ -56,22 +73,8 @@ def iteration_task(
         len(local_candidate_nodes), size=num_roteadores, replace=False)
     combo = [local_candidate_nodes[i] for i in selected_indices]
 
-    # Funções auxiliares para cálculo
-    def calc_fspl(distance_m):
-        if distance_m == 0:
-            return 0
-        distance_km = distance_m / 1000.0
-        return 20 * np.log10(distance_km) + 20 * np.log10(freq_mhz) + 32.44
-
-    def get_path_and_loss(G, source, target):
-        try:
-            path = nx.shortest_path(G, source=source, target=target, weight='weight')
-            obstacle_loss = sum(G[p][q]['weight'] for p, q in zip(path[:-1], path[1:]))
-            return path, obstacle_loss
-        except (nx.NetworkXNoPath, KeyError):
-            return None, float('inf')
-
     def compute_rssi_for_node(G, node, routers):
+        """Calcula o melhor RSSI para um nó em relação aos roteadores."""
         best_rssi = -100.0
         for router in routers:
             if node == router:
@@ -80,7 +83,7 @@ def iteration_task(
             if path is None:
                 continue
             euclidean_dist = np.hypot(node[0] - router[0], node[1] - router[1])
-            fspl = calc_fspl(euclidean_dist * distance_conversion)
+            fspl = calc_fspl(euclidean_dist * distance_conversion, freq_mhz)
             rssi = tx_power - fspl - obstacle_loss
             if rssi > best_rssi:
                 best_rssi = rssi
@@ -94,7 +97,6 @@ def iteration_task(
     avg_rssi = np.mean(valid_rssi) if len(valid_rssi) > 0 else -100
 
     # Penalidade por roteadores próximos
-    from itertools import combinations
     total = 0
     for a, b in combinations(combo, 2):
         d = np.hypot(a[0] - b[0], a[1] - b[1])
@@ -113,7 +115,7 @@ def iteration_task(
 
 class RouterOptimizer:
     def __init__(self):
-        # Carregar configurações do config.json
+        """Inicializa o otimizador de roteadores e carrega configurações."""
         config_path = os.path.join(os.path.dirname(__file__), "config.json")
         if os.path.isfile(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
@@ -145,7 +147,7 @@ class RouterOptimizer:
         logging.info("RouterOptimizer inicializado com config.json.")
 
     def load_graph(self):
-        """Carrega o grafo do usuário via diálogo Tkinter"""
+        """Carrega o grafo do usuário via diálogo Tkinter."""
         logging.info("Solicitando arquivo do grafo ao usuário...")
         root = tk.Tk()
         root.call('tk', 'scaling', 1.0)
@@ -167,24 +169,16 @@ class RouterOptimizer:
         return nx.relabel_nodes(G, {n: eval(n) for n in G.nodes()})
 
     def calc_fspl(self, distance_m):
-        """Calcula a perda de percurso no espaço livre"""
-        if distance_m == 0:
-            return 0
-        distance_km = distance_m / 1000.0
-        return 20 * np.log10(distance_km) + 20 * np.log10(self.freq_mhz) + 32.44
+        """Calcula a perda de percurso no espaço livre."""
+        return calc_fspl(distance_m, self.freq_mhz)
 
     @lru_cache(maxsize=None)
     def get_path_and_loss(self, G, source, target):
-        """Calcula o caminho e a perda por obstáculos entre dois nós"""
-        try:
-            path = nx.shortest_path(G, source=source, target=target, weight='weight')
-            obstacle_loss = sum(G[p][q]['weight'] for p, q in zip(path[:-1], path[1:]))
-            return path, obstacle_loss
-        except (nx.NetworkXNoPath, KeyError):
-            return None, float('inf')
+        """Calcula o caminho e a perda por obstáculos entre dois nós."""
+        return get_path_and_loss(G, source, target)
 
     def compute_rssi_for_node(self, G, node, routers):
-        """Calcula o melhor RSSI para um nó em relação aos roteadores"""
+        """Calcula o melhor RSSI para um nó em relação aos roteadores."""
         best_rssi = -100.0
         for router in routers:
             if node == router:
@@ -193,14 +187,14 @@ class RouterOptimizer:
             if path is None:
                 continue
             euclidean_dist = np.hypot(node[0] - router[0], node[1] - router[1])
-            fspl = self.calc_fspl(euclidean_dist * self.distance_conversion)
+            fspl = calc_fspl(euclidean_dist * self.distance_conversion, self.freq_mhz)
             rssi = self.tx_power - fspl - obstacle_loss
             if rssi > best_rssi:
                 best_rssi = rssi
         return best_rssi
 
     def evaluate_coverage(self, G, routers):
-        """Avalia a cobertura e RSSI médio para uma configuração de roteadores"""
+        """Avalia a cobertura e RSSI médio para uma configuração de roteadores."""
         logging.debug("Calculando cobertura e RSSI médio.")
         node_list = list(G.nodes())
         with ThreadPoolExecutor() as executor:
@@ -215,7 +209,7 @@ class RouterOptimizer:
         return coverage, avg_rssi, rssi_values
 
     def router_distance_penalty(self, routers):
-        """Calcula penalização por roteadores muito próximos"""
+        """Calcula penalização por roteadores muito próximos."""
         total = 0
         for a, b in combinations(routers, 2):
             d = np.hypot(a[0] - b[0], a[1] - b[1])
@@ -223,7 +217,7 @@ class RouterOptimizer:
         return total
 
     def find_best_routers(self, G, num_roteadores):
-        """Encontra as melhores posições para os roteadores usando paralelismo"""
+        """Encontra as melhores posições para os roteadores usando paralelismo."""
         logging.info(f"Iniciando busca pelas melhores posições para {num_roteadores} roteadores.")
         nodes = list(G.nodes())
         best_solutions = []
@@ -281,13 +275,13 @@ class RouterOptimizer:
                     if idx % 20 == 0 or idx == total_iterations:
                         logging.info(f"Iterações concluídas: {idx}/{total_iterations}")
                 except Exception as e:
-                    logging.error(f"Erro durante a execução paralela na iteração {idx}: {e}")
+                    logging.error(f"Erro durante a execução paralela na iteração {idx}: {e}", exc_info=True)
 
         logging.info("Busca por melhores posições finalizada.")
         return best_solutions
 
     def _create_base_plot(self, G, routers, rssi_values=None):
-        """Cria o plot base comum"""
+        """Cria o plot base comum."""
         scale_factor = self.scale_factor
         pos = {n: (n[0] * scale_factor, n[1] * scale_factor) for n in G.nodes()}
         
@@ -317,7 +311,7 @@ class RouterOptimizer:
         return fig, ax
 
     def save_solution(self, solution, index, G):
-        """Salva uma solução com plotagem e dados"""
+        """Salva uma solução com plotagem e dados."""
         folder_name = f"solucao_{index}"
         os.makedirs(folder_name, exist_ok=True)
         logging.info(f"Salvando solução #{index} em {folder_name}")
@@ -344,7 +338,7 @@ class RouterOptimizer:
         return folder_name
 
     def run_optimization(self):
-        """Executa o processo de otimização para a quantidade de roteadores definida no config"""
+        """Executa o processo de otimização para a quantidade de roteadores definida no config."""
         logging.info("Iniciando processo de otimização de roteadores.")
         logging.info("=== OTIMIZAÇÃO DE ROTEADORES ===")
         G = self.load_graph()
@@ -362,7 +356,7 @@ class RouterOptimizer:
                 num_roteadores = 1
 
         logging.info(f"=== Testando com {num_roteadores} roteadores ===")
-        logging.info(f"Roteador: {self.router_name}")  # Alterado para usar o nome do config
+        logging.info(f"Roteador: {self.router_name}")
         logging.info(f"Potência TX: {self.tx_power} dBm, Frequência: {self.freq_mhz/1000} GHz")
 
         logging.info(f"Otimização para {num_roteadores} roteadores iniciada.")
