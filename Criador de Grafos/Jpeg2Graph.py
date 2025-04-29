@@ -17,7 +17,9 @@ logging.basicConfig(
 )
 
 class JpegToGraph:
-    def __init__(self, config_path="c:\\Git\\TCC\\Criador de Grafos\\config.json"):
+    def __init__(self, config_path=None):
+        if config_path is None:
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
         logging.info("Inicializando JpegToGraph com config: %s", config_path)
         # Carregar configurações do arquivo JSON
         self.config = self.load_config(config_path)
@@ -241,7 +243,7 @@ def main():
     processor.show_image(img_rgb, "Planta padronizada")
 
     # 2. Processar imagem
-    hsv_img = cv2.cvtColor(cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2HSV)
+    hsv_img = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)  # Conversão direta de RGB para HSV
     color_masks = processor.create_color_masks(hsv_img)
     blockage_mask = processor.create_blockage_mask(img_rgb)
 
