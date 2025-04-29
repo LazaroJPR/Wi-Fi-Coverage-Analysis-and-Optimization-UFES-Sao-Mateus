@@ -26,11 +26,15 @@ Este módulo converte uma imagem de planta arquitetônica em um **grafo ponderad
 
 ## 🛠️ Tecnologias utilizadas
 
-- Python
-- OpenCV
+- Python 3.8+
+- OpenCV (`opencv-python`)
 - NumPy
 - NetworkX
 - Matplotlib
+- Tkinter (interface gráfica para seleção de arquivos)
+- concurrent.futures (paralelização, biblioteca padrão)
+- logging (registro de logs, biblioteca padrão)
+- json, os (bibliotecas padrão)
 
 ## 🚧 Funcionalidades
 
@@ -43,6 +47,18 @@ Este módulo converte uma imagem de planta arquitetônica em um **grafo ponderad
   - Nós posicionados em um grid
   - Arestas ponderadas conforme o tipo de obstáculo
 - Visualização final do grafo com legenda de pesos
+
+### Requisitos
+
+Certifique-se de ter instalado:
+- Python 3.8+  
+- As seguintes dependências (instale com o comando abaixo):
+
+```bash
+pip install opencv-python numpy networkx matplotlib
+```
+
+> Tkinter, concurrent.futures, logging, json e os já vêm com o Python padrão.
 
 ## 📦 Como usar
 
@@ -111,11 +127,15 @@ This module converts a **floor plan image** into a **weighted graph**, where nod
 
 ## 🛠️ Technologies Used
 
-- Python
-- OpenCV
+- Python 3.8+
+- OpenCV (`opencv-python`)
 - NumPy
 - NetworkX
 - Matplotlib
+- Tkinter (GUI for file selection)
+- concurrent.futures (parallelization, standard library)
+- logging (logging, standard library)
+- json, os (standard libraries)
 
 ## 🚧 Features
 
@@ -128,6 +148,18 @@ This module converts a **floor plan image** into a **weighted graph**, where nod
   - Nodes placed on a grid
   - Edges weighted by obstacle type
 - Final visualization with color-coded weights and legend
+
+### Requirements
+
+Make sure you have installed:
+- Python 3.8+  
+- The following dependencies (install with the command below):
+
+```bash
+pip install opencv-python numpy networkx matplotlib
+```
+
+> Tkinter, concurrent.futures, logging, json and os are included in standard Python.
 
 ## 📦 How to Use
 
