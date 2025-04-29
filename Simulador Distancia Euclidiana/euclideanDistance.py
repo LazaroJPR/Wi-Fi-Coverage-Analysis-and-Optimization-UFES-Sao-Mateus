@@ -107,7 +107,8 @@ def iteration_task(
         'routers': combo,
         'coverage': coverage,
         'avg_rssi': avg_rssi,
-        'score': score
+        'score': score,
+        'rssi_values': rssi_values.tolist()
     }
 
 class RouterOptimizer:
@@ -285,7 +286,7 @@ class RouterOptimizer:
         logging.info("Busca por melhores posições finalizada.")
         return best_solutions
 
-    def _create_base_plot(self, G, routers):
+    def _create_base_plot(self, G, routers, rssi_values=None):
         """Cria o plot base comum"""
         scale_factor = self.scale_factor
         pos = {n: (n[0] * scale_factor, n[1] * scale_factor) for n in G.nodes()}
@@ -298,7 +299,8 @@ class RouterOptimizer:
         nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=1.2, alpha=0.6, ax=ax)
         
         # Desenhar nós com cores de RSSI
-        _, _, rssi_values = self.evaluate_coverage(G, routers)
+        if rssi_values is None:
+            _, _, rssi_values = self.evaluate_coverage(G, routers)
         nodes = nx.draw_networkx_nodes(
             G, pos, node_color=rssi_values,
             cmap='RdYlGn', vmin=-90, vmax=-30,
@@ -320,7 +322,9 @@ class RouterOptimizer:
         os.makedirs(folder_name, exist_ok=True)
         logging.info(f"Salvando solução #{index} em {folder_name}")
 
-        fig, ax = self._create_base_plot(G, solution['routers'])
+        # Usa os valores de RSSI já calculados
+        rssi_values = np.array(solution.get('rssi_values'))
+        fig, ax = self._create_base_plot(G, solution['routers'], rssi_values)
         plt.colorbar(ax.collections[1], label='RSSI (dBm)', ax=ax)
         ax.set_title(f"Solução #{index} - Cobertura: {solution['coverage']:.1f}%, RSSI Médio: {solution['avg_rssi']:.1f} dBm")
         ax.axis('equal')
