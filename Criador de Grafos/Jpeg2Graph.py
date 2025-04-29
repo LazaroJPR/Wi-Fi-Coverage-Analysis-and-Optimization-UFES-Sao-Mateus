@@ -17,6 +17,53 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 
+def neighbor_edges(args):
+    """Função auxiliar para paralelizar a verificação de vizinhos e pesos (fora da classe)"""
+    node, nodes_set, cell_size, directions, hsv_img, blockage_mask, weight_mapping, check_edge_weights_func = args
+    x, y = node
+    edges = []
+    for dx, dy in directions:
+        neighbor = (x + dx, y + dy)
+        if neighbor in nodes_set:
+            point1 = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
+            point2 = (neighbor[0] * cell_size + cell_size // 2, neighbor[1] * cell_size + cell_size // 2)
+            weight = check_edge_weights_func(point1, point2, hsv_img, blockage_mask, weight_mapping)
+            if weight is not None:
+                edges.append((node, neighbor, weight))
+    return edges
+
+def check_edge_weights(point1, point2, hsv_img, blockage_mask, weight_mapping):
+    """Determina o peso da aresta baseado nas cores ao longo da linha (função de módulo)"""
+    mask = np.zeros((hsv_img.shape[0], hsv_img.shape[1]), dtype=np.uint8)
+    cv2.line(mask, point1, point2, 255, thickness=3)
+    if np.any(cv2.bitwise_and(blockage_mask, mask)):
+        return None  # Aresta bloqueada
+    line_pixels = cv2.bitwise_and(hsv_img, hsv_img, mask=mask)
+    total_pixels = np.count_nonzero(mask) + 1e-5
+    # Definição dos intervalos HSV para as cores
+    hsv_color_ranges = {
+        'azul': (np.array([100, 150, 50]), np.array([140, 255, 255])),
+        'vermelho1': (np.array([0, 100, 100]), np.array([10, 255, 255])),
+        'vermelho2': (np.array([160, 100, 100]), np.array([180, 255, 255])),
+        'verde': (np.array([36, 50, 50]), np.array([86, 255, 255])),
+        'amarelo': (np.array([20, 100, 100]), np.array([40, 255, 255]))
+    }
+    def _create_color_mask(hsv_img, color_name):
+        if color_name == 'vermelho':
+            mask1 = cv2.inRange(hsv_img, *hsv_color_ranges['vermelho1'])
+            mask2 = cv2.inRange(hsv_img, *hsv_color_ranges['vermelho2'])
+            return cv2.bitwise_or(mask1, mask2)
+        else:
+            return cv2.inRange(hsv_img, *hsv_color_ranges[color_name])
+    color_proportions = {
+        color: _create_color_mask(line_pixels, color)
+        for color in ['azul', 'vermelho', 'verde', 'amarelo']
+    }
+    for color, prop in color_proportions.items():
+        if np.count_nonzero(prop) / total_pixels > 0.15:
+            return weight_mapping[color]
+    return weight_mapping['default']
+
 class JpegToGraph:
     def __init__(self, config_path=None):
         if config_path is None:
@@ -136,38 +183,6 @@ class JpegToGraph:
         logging.info("Total de nós gerados: %d", len(nodes))
         return nodes
 
-    def check_edge_weights(self, point1, point2, hsv_img, blockage_mask):
-        """Determina o peso da aresta baseado nas cores ao longo da linha"""
-        mask = np.zeros((hsv_img.shape[0], hsv_img.shape[1]), dtype=np.uint8)
-        cv2.line(mask, point1, point2, 255, thickness=3)
-        if np.any(cv2.bitwise_and(blockage_mask, mask)):
-            return None  # Aresta bloqueada
-        line_pixels = cv2.bitwise_and(hsv_img, hsv_img, mask=mask)
-        total_pixels = np.count_nonzero(mask) + 1e-5
-        color_proportions = {
-            color: self._create_color_mask(line_pixels, color)
-            for color in ['azul', 'vermelho', 'verde', 'amarelo']
-        }
-        for color, prop in color_proportions.items():
-            if np.count_nonzero(prop) / total_pixels > 0.15:
-                return self.weight_mapping[color]
-        return self.weight_mapping['default']
-
-    def _neighbor_edges(self, args):
-        """Função auxiliar para paralelizar a verificação de vizinhos e pesos"""
-        node, nodes_set, cell_size, directions, hsv_img, blockage_mask, weight_mapping = args
-        x, y = node
-        edges = []
-        for dx, dy in directions:
-            neighbor = (x + dx, y + dy)
-            if neighbor in nodes_set:
-                point1 = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
-                point2 = (neighbor[0] * cell_size + cell_size // 2, neighbor[1] * cell_size + cell_size // 2)
-                weight = self.check_edge_weights(point1, point2, hsv_img, blockage_mask)
-                if weight is not None:
-                    edges.append((node, neighbor, weight))
-        return edges
-
     def build_graph(self, nodes, hsv_img, blockage_mask):
         """Constrói o grafo com nós e arestas"""
         logging.info("Construindo o grafo")
@@ -177,12 +192,12 @@ class JpegToGraph:
                       (1, 1), (1, -1), (-1, 1), (-1, -1)]
         nodes_set = set(nodes)
         args_list = [
-            (node, nodes_set, self.cell_size, directions, hsv_img, blockage_mask, self.weight_mapping)
+            (node, nodes_set, self.cell_size, directions, hsv_img, blockage_mask, self.weight_mapping, check_edge_weights)
             for node in nodes
         ]
         all_edges = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            for edges in executor.map(self._neighbor_edges, args_list):
+            for edges in executor.map(neighbor_edges, args_list):
                 all_edges.extend(edges)
         # Adiciona arestas ao grafo (evita duplicatas)
         for u, v, weight in all_edges:
