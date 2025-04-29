@@ -73,35 +73,16 @@ def iteration_task(
         len(local_candidate_nodes), size=num_roteadores, replace=False)
     combo = [local_candidate_nodes[i] for i in selected_indices]
 
-    def compute_rssi_for_node(G, node, routers):
-        """Calcula o melhor RSSI para um nó em relação aos roteadores."""
-        best_rssi = -100.0
-        for router in routers:
-            if node == router:
-                continue
-            path, obstacle_loss = get_path_and_loss(G, node, router)
-            if path is None:
-                continue
-            euclidean_dist = np.hypot(node[0] - router[0], node[1] - router[1])
-            fspl = calc_fspl(euclidean_dist * distance_conversion, freq_mhz)
-            rssi = tx_power - fspl - obstacle_loss
-            if rssi > best_rssi:
-                best_rssi = rssi
-        return best_rssi
-
-    node_list = list(G.nodes())
-    rssi_values = [compute_rssi_for_node(G, node, combo) for node in node_list]
+    # Centraliza o cálculo de RSSI e penalidade usando métodos estáticos
+    rssi_values = RouterOptimizer.compute_rssi_for_nodes_static(
+        G, combo, tx_power, freq_mhz, distance_conversion, rssi_func=RouterOptimizer.compute_rssi_for_node_static
+    )
     rssi_values = np.array(rssi_values)
     coverage = np.sum(rssi_values >= rssi_threshold) / len(rssi_values) * 100
     valid_rssi = rssi_values[rssi_values > -100]
     avg_rssi = np.mean(valid_rssi) if len(valid_rssi) > 0 else -100
 
-    # Penalidade por roteadores próximos
-    total = 0
-    for a, b in combinations(combo, 2):
-        d = np.hypot(a[0] - b[0], a[1] - b[1])
-        total += 1 / (d + 1e-3)
-    penalty = total
+    penalty = RouterOptimizer.router_distance_penalty_static(combo)
 
     score = avg_rssi - 0.1 * penalty
 
@@ -177,21 +158,45 @@ class RouterOptimizer:
         """Calcula o caminho e a perda por obstáculos entre dois nós."""
         return get_path_and_loss(G, source, target)
 
-    def compute_rssi_for_node(self, G, node, routers):
-        """Calcula o melhor RSSI para um nó em relação aos roteadores."""
+    @staticmethod
+    def compute_rssi_for_node_static(G, node, routers, tx_power, freq_mhz, distance_conversion):
+        """Calcula o melhor RSSI para um nó em relação aos roteadores (static, para uso externo)."""
         best_rssi = -100.0
         for router in routers:
             if node == router:
-                continue  # Ignora o próprio roteador
-            path, obstacle_loss = self.get_path_and_loss(G, node, router)
+                continue
+            path, obstacle_loss = get_path_and_loss(G, node, router)
             if path is None:
                 continue
             euclidean_dist = np.hypot(node[0] - router[0], node[1] - router[1])
-            fspl = calc_fspl(euclidean_dist * self.distance_conversion, self.freq_mhz)
-            rssi = self.tx_power - fspl - obstacle_loss
+            fspl = calc_fspl(euclidean_dist * distance_conversion, freq_mhz)
+            rssi = tx_power - fspl - obstacle_loss
             if rssi > best_rssi:
                 best_rssi = rssi
         return best_rssi
+
+    @staticmethod
+    def compute_rssi_for_nodes_static(G, routers, tx_power, freq_mhz, distance_conversion, rssi_func=None):
+        """Calcula RSSI para todos os nós do grafo usando função fornecida."""
+        if rssi_func is None:
+            rssi_func = RouterOptimizer.compute_rssi_for_node_static
+        node_list = list(G.nodes())
+        return [rssi_func(G, node, routers, tx_power, freq_mhz, distance_conversion) for node in node_list]
+
+    @staticmethod
+    def router_distance_penalty_static(routers):
+        """Calcula penalização por roteadores muito próximos (static, para uso externo)."""
+        total = 0
+        for a, b in combinations(routers, 2):
+            d = np.hypot(a[0] - b[0], a[1] - b[1])
+            total += 1 / (d + 1e-3)
+        return total
+
+    def compute_rssi_for_node(self, G, node, routers):
+        """Calcula o melhor RSSI para um nó em relação aos roteadores."""
+        return RouterOptimizer.compute_rssi_for_node_static(
+            G, node, routers, self.tx_power, self.freq_mhz, self.distance_conversion
+        )
 
     def evaluate_coverage(self, G, routers):
         """Avalia a cobertura e RSSI médio para uma configuração de roteadores."""
@@ -210,11 +215,7 @@ class RouterOptimizer:
 
     def router_distance_penalty(self, routers):
         """Calcula penalização por roteadores muito próximos."""
-        total = 0
-        for a, b in combinations(routers, 2):
-            d = np.hypot(a[0] - b[0], a[1] - b[1])
-            total += 1 / (d + 1e-3)
-        return total
+        return RouterOptimizer.router_distance_penalty_static(routers)
 
     def find_best_routers(self, G, num_roteadores):
         """Encontra as melhores posições para os roteadores usando paralelismo."""
