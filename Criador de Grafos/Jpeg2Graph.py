@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog
 import json
 import logging
+import concurrent.futures
 
 # Configuração básica do logging
 logging.basicConfig(
@@ -113,12 +114,24 @@ class JpegToGraph:
         logging.info("Gerando nós do grafo")
         h, w = img_shape[:2]
         nodes = []
-        for y in range(0, h, self.cell_size):
-            for x in range(0, w, self.cell_size):
-                center_y = min(y + self.cell_size//2, h-1)
-                center_x = min(x + self.cell_size//2, w-1)
-                if blockage_mask[center_y, center_x] == 0:  # Área não bloqueada
-                    node = (x // self.cell_size, y // self.cell_size)
+
+        def check_node(y, x):
+            center_y = min(y + self.cell_size//2, h-1)
+            center_x = min(x + self.cell_size//2, w-1)
+            if blockage_mask[center_y, center_x] == 0:
+                return (x // self.cell_size, y // self.cell_size)
+            return None
+
+        y_range = range(0, h, self.cell_size)
+        x_range = range(0, w, self.cell_size)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = []
+            for y in y_range:
+                for x in x_range:
+                    futures.append(executor.submit(check_node, y, x))
+            for future in concurrent.futures.as_completed(futures):
+                node = future.result()
+                if node is not None:
                     nodes.append(node)
         logging.info("Total de nós gerados: %d", len(nodes))
         return nodes
@@ -140,27 +153,41 @@ class JpegToGraph:
                 return self.weight_mapping[color]
         return self.weight_mapping['default']
 
+    def _neighbor_edges(self, args):
+        """Função auxiliar para paralelizar a verificação de vizinhos e pesos"""
+        node, nodes_set, cell_size, directions, hsv_img, blockage_mask, weight_mapping = args
+        x, y = node
+        edges = []
+        for dx, dy in directions:
+            neighbor = (x + dx, y + dy)
+            if neighbor in nodes_set:
+                point1 = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
+                point2 = (neighbor[0] * cell_size + cell_size // 2, neighbor[1] * cell_size + cell_size // 2)
+                weight = self.check_edge_weights(point1, point2, hsv_img, blockage_mask)
+                if weight is not None:
+                    edges.append((node, neighbor, weight))
+        return edges
+
     def build_graph(self, nodes, hsv_img, blockage_mask):
         """Constrói o grafo com nós e arestas"""
         logging.info("Construindo o grafo")
         G = nx.Graph()
         G.add_nodes_from(nodes)
-        # Direções para conexões (incluindo diagonais)
         directions = [(1, 0), (0, 1), (-1, 0), (0, -1),
-                     (1, 1), (1, -1), (-1, 1), (-1, -1)]
-        for node in nodes:
-            x, y = node
-            for dx, dy in directions:
-                neighbor = (x + dx, y + dy)
-                if neighbor in G:
-                    # Converter coordenadas do nó para pixels na imagem
-                    point1 = (x * self.cell_size + self.cell_size // 2,
-                             y * self.cell_size + self.cell_size // 2)
-                    point2 = (neighbor[0] * self.cell_size + self.cell_size // 2,
-                              neighbor[1] * self.cell_size + self.cell_size // 2)
-                    weight = self.check_edge_weights(point1, point2, hsv_img, blockage_mask)
-                    if weight is not None:
-                        G.add_edge(node, neighbor, weight=weight)
+                      (1, 1), (1, -1), (-1, 1), (-1, -1)]
+        nodes_set = set(nodes)
+        args_list = [
+            (node, nodes_set, self.cell_size, directions, hsv_img, blockage_mask, self.weight_mapping)
+            for node in nodes
+        ]
+        all_edges = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for edges in executor.map(self._neighbor_edges, args_list):
+                all_edges.extend(edges)
+        # Adiciona arestas ao grafo (evita duplicatas)
+        for u, v, weight in all_edges:
+            if not G.has_edge(u, v):
+                G.add_edge(u, v, weight=weight)
         logging.info("Total de nós no grafo: %d", G.number_of_nodes())
         logging.info("Total de arestas no grafo: %d", G.number_of_edges())
         return G
