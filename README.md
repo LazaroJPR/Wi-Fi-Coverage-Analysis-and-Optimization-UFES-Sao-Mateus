@@ -3,7 +3,7 @@
 <h1>Análise e Otimização da Cobertura Wi-Fi - UFES São Mateus</h1>
 
 <div align="center">
-  <img src="Imagens/Outros/UFES.png" alt="UFES Logo" width="200" />
+  <img src="Dados/Outros/UFES.png" alt="UFES Logo" width="200" />
 </div>
 
 ## 📋 Sobre o Projeto
@@ -46,7 +46,7 @@ Sistema para transformação de plantas arquitetônicas em modelos de rede:
 <h1>Wi-Fi Coverage Analysis and Optimization - UFES São Mateus</h1>
 
 <div align="center">
-  <img src="Imagens/Outros/UFES.png" alt="UFES Logo" width="200" />
+  <img src="Dados/Outros/UFES.png" alt="UFES Logo" width="200" />
 </div>
 
 ## 📋 About the Project
