@@ -84,7 +84,11 @@ def iteration_task(
 
     penalty = RouterOptimizer.router_distance_penalty_static(combo)
 
-    score = avg_rssi - 0.1 * penalty
+    # Normaliza cobertura e RSSI médio para [0,1]
+    coverage_norm = coverage / 100.0
+    avg_rssi_norm = (avg_rssi + 90) / 60
+
+    score = 0.6 * avg_rssi_norm + 0.4 * coverage_norm - 0.1 * penalty
 
     return {
         'routers': combo,
