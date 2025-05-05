@@ -291,7 +291,11 @@ class RouterOptimizer:
             nodes_plot.set_array(rssi_values)
             nodes_plot.set_cmap('RdYlGn')
             nodes_plot.set_clim(-90, -30)
-            ax.set_title(f"Cobertura: {coverage:.1f}% | RSSI médio: {avg_rssi:.1f} dBm")
+            router_positions = ', '.join([str(tuple(int(x) for x in r)) for r in current_routers])
+            ax.set_title(
+                f"Cobertura: {coverage:.1f}% | RSSI médio: {avg_rssi:.1f} dBm\n"
+                f"Posições dos roteadores: {router_positions}"
+            )
             fig.canvas.draw_idle()
 
         def on_slider_change(val):
