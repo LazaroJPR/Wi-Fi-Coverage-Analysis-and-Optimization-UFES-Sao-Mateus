@@ -25,9 +25,8 @@ logging.basicConfig(
 
 def calc_fspl(distance_m, freq_mhz):
     """Calcula a perda de percurso no espaço livre (FSPL)."""
-    if distance_m == 0:
-        return 0
-    distance_km = distance_m / 1000.0
+    min_dist = 1e-3
+    distance_km = max(distance_m, min_dist) / 1000.0
     return 20 * np.log10(distance_km) + 20 * np.log10(freq_mhz) + 32.44
 
 def get_path_and_loss(G, source, target):
