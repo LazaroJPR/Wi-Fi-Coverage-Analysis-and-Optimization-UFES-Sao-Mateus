@@ -18,7 +18,7 @@ import gzip
 import time
 import ast
 from datetime import datetime
-from precompute_aoa_toa import PrecomputeAoAToA  # Adicione este import
+from precompute_aoa_toa import PrecomputeAoAToA
 
 # Constantes
 SPEED_OF_LIGHT = 3e8  # m/s
@@ -32,9 +32,8 @@ logging.basicConfig(
 
 def calc_fspl(distance_m, freq_mhz):
     """Calcula a perda de percurso no espaço livre (FSPL)."""
-    if distance_m == 0:
-        return 0
-    distance_km = distance_m / 1000.0
+    min_dist = 1e-3
+    distance_km = max(distance_m, min_dist) / 1000.0
     return 20 * np.log10(distance_km) + 20 * np.log10(freq_mhz) + 32.44
 
 def get_path_and_loss(G, source, target):
@@ -150,9 +149,10 @@ class RouterOptimizerAoAToA:
             if toa is None:
                 continue
 
-            distance = calc_distance_toa(toa)
+            distance = max(calc_distance_toa(toa), self.distance_conversion)
             fspl = self.calc_fspl(distance)
             rssi = self.tx_power - fspl - obstacle_loss
+            
             if rssi > best_rssi:
                 best_rssi = rssi
         return best_rssi
