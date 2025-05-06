@@ -5,19 +5,12 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 import numpy as np
-from itertools import combinations
-from sklearn.cluster import KMeans
 from functools import lru_cache
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import filedialog
 import logging
 import json
-import pickle
-import gzip
-import time
-import ast
-from datetime import datetime
 from precompute_aoa_toa import PrecomputeAoAToA
 
 # Constantes

@@ -3,7 +3,6 @@ import networkx as nx
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, Slider
 import numpy as np
 from itertools import combinations
 from sklearn.cluster import KMeans
@@ -13,11 +12,6 @@ import tkinter as tk
 from tkinter import filedialog
 import logging
 import json
-import pickle
-import gzip
-import time
-import ast
-from datetime import datetime
 from precompute_aoa_toa import PrecomputeAoAToA
 import zipfile
 import shutil

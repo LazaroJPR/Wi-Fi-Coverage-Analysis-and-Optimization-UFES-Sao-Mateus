@@ -1,40 +1,25 @@
+import ast
+import gzip
+import logging
 import os
 import pickle
-import gzip
 import time
-import ast
-import logging
 import tkinter as tk
-from tkinter import filedialog
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from tkinter import filedialog
+
 import networkx as nx
 
 def process_toa_aoa_chunk(
-    chunk_id,
     src_nodes,
     target_nodes,
     G_data,
     distance_conversion,
     noise_factor
 ):
-    """
-    Processa um chunk de nós para calcular dados ToA (Time of Arrival) e AoA (Angle of Arrival).
-
-    Parâmetros:
-        chunk_id (int): Identificador do chunk para logging.
-        src_nodes (list): Lista de nós de origem (tuplas de coordenadas).
-        target_nodes (list): Lista de nós de destino (tuplas de coordenadas).
-        G_data (dict): Dados serializados do grafo (formato node_link_data).
-        distance_conversion (float): Fator de conversão de distância para metros.
-        noise_factor (float): Fator de ruído a ser aplicado nos cálculos.
-
-    Retorna:
-        tuple: Dois dicionários, (toa_results, aoa_results), mapeando pares (src, tgt) para valores ToA e AoA.
-    """
+    """Processa um chunk de nós para calcular dados ToA (Time of Arrival) e AoA (Angle of Arrival)."""
     import networkx as nx
     import numpy as np
-    import logging
-    import time
 
     SPEED_OF_LIGHT = 3e8
 
@@ -57,9 +42,6 @@ def process_toa_aoa_chunk(
 
     toa_results = {}
     aoa_results = {}
-
-    total_pairs = len(src_nodes) * len(target_nodes)
-    processed = 0
 
     for src in src_nodes:
         for tgt in target_nodes:
@@ -116,36 +98,16 @@ def process_toa_aoa_chunk(
             aoa = (aoa + aoa_noise) % 360
             aoa_results[(src, tgt)] = aoa
 
-            processed += 1
-
     return toa_results, aoa_results
 
 class PrecomputeAoAToA:
     def __init__(self, optimizer):
-        """
-        Inicializa a classe de pré-computação ToA/AoA.
-
-        Parâmetros:
-            optimizer: Objeto otimizador que deve possuir os atributos:
-                - precomputation_save_path (str): Caminho para salvar arquivos pré-computados.
-                - distance_conversion (float): Fator de conversão de distância.
-                - noise_factor (float): Fator de ruído.
-        """
+        """Inicializa a classe de pré-computação ToA/AoA."""
         self.optimizer = optimizer
 
     @staticmethod
     def save_precomputed_data(toa_data, aoa_data, filename):
-        """
-        Salva os dados pré-computados de ToA e AoA em arquivo compactado.
-
-        Parâmetros:
-            toa_data (dict): Dicionário de pares (src, tgt) para valores ToA.
-            aoa_data (dict): Dicionário de pares (src, tgt) para valores AoA.
-            filename (str): Caminho do arquivo para salvar os dados.
-
-        Retorna:
-            str: Caminho do arquivo salvo.
-        """
+        """Salva os dados pré-computados de ToA e AoA em arquivo compactado."""
         logging.info(f"Salvando {len(toa_data)} pares de dados em {filename}")
         toa_serializable = {str(k): v for k, v in toa_data.items()}
         aoa_serializable = {str(k): v for k, v in aoa_data.items()}
@@ -161,15 +123,7 @@ class PrecomputeAoAToA:
 
     @staticmethod
     def load_precomputed_data(filename):
-        """
-        Carrega dados pré-computados de ToA e AoA de um arquivo compactado.
-
-        Parâmetros:
-            filename (str): Caminho do arquivo de dados pré-computados.
-
-        Retorna:
-            tuple: Dois dicionários, (toa_data, aoa_data), mapeando pares (src, tgt) para valores ToA e AoA.
-        """
+        """Carrega dados pré-computados de ToA e AoA de um arquivo compactado."""
         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
         logging.info(f"Carregando dados pré-computados de {filename} ({file_size_mb:.2f} MB)")
         start_time = time.time()
@@ -184,21 +138,7 @@ class PrecomputeAoAToA:
         return toa_data, aoa_data
 
     def precompute_toa_aoa_data(self, G, nodes, filename=None, chunks=None):
-        """
-        Realiza a pré-computação paralela dos dados ToA e AoA para todos os pares de nós.
-
-        Parâmetros:
-            G (networkx.Graph): Grafo de entrada.
-            nodes (list): Lista de nós (tuplas de coordenadas).
-            filename (str, opcional): Caminho do arquivo para salvar os dados. Se None, será gerado automaticamente.
-            chunks (int, opcional): Número de chunks/processos paralelos. Se None, será definido automaticamente.
-
-        Retorna:
-            tuple: (toa_data, aoa_data, saved_file)
-                - toa_data (dict): Dicionário de pares (src, tgt) para valores ToA.
-                - aoa_data (dict): Dicionário de pares (src, tgt) para valores AoA.
-                - saved_file (str): Caminho do arquivo salvo.
-        """
+        """Realiza a pré-computação paralela dos dados ToA e AoA para todos os pares de nós."""
         if chunks is None:
             chunks = min(os.cpu_count() or 4, 16)
         if filename is None:
@@ -227,7 +167,6 @@ class PrecomputeAoAToA:
                 futures.append(
                     executor.submit(
                         process_toa_aoa_chunk,
-                        i+1,
                         src_chunk,
                         nodes,
                         G_data,
@@ -254,22 +193,7 @@ class PrecomputeAoAToA:
         return toa_data, aoa_data, saved_file
 
     def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False):
-        """
-        Gera ou carrega dados ToA/AoA, utilizando pré-computação se disponível.
-
-        Parâmetros:
-            G (networkx.Graph): Grafo de entrada.
-            nodes (list): Lista de nós (tuplas de coordenadas).
-            noise_factor (float, opcional): Fator de ruído. Se None, usa o do otimizador.
-            use_precomputed (bool): Se True, tenta carregar dados pré-computados.
-            precomputed_file (str, opcional): Caminho do arquivo pré-computado. Se None, solicita via diálogo.
-            force_precompute (bool): Se True, força o recálculo mesmo se houver arquivo.
-
-        Retorna:
-            tuple: (toa_data, aoa_data)
-                - toa_data (dict): Dicionário de pares (src, tgt) para valores ToA.
-                - aoa_data (dict): Dicionário de pares (src, tgt) para valores AoA.
-        """
+        """Gera ou carrega dados ToA/AoA, utilizando pré-computação se disponível."""
         if noise_factor is None:
             noise_factor = self.optimizer.noise_factor
         if use_precomputed and not precomputed_file:
