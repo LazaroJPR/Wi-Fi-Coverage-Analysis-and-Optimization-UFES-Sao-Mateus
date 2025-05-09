@@ -232,37 +232,82 @@ class RouterOptimizer:
         routers = [nodes[i] for i in np.linspace(0, len(nodes)-1, num_roteadores, dtype=int)]
         
         fig = plt.figure(figsize=(16, 12))
-        fig.subplots_adjust(top=0.85, bottom=0.25)
         ax = fig.add_subplot(111)
-        
-        ax_button = plt.axes([0.45, 0.13, 0.1, 0.06])
-        btn_calculate = Button(ax_button, 'Calcular')
+        ax.set_aspect('equal')
+        fig.subplots_adjust(top=0.85, bottom=0.25)
 
-        ax_slider = plt.axes([0.25, 0.05, 0.5, 0.04])
-        slider_routers = Slider(
-            ax_slider, 'Qtd. Roteadores', min_routers, max_routers, 
-            valinit=num_roteadores, valstep=1, valfmt='%0.0f'
-        )
-        
-        fig.suptitle("Arraste os roteadores, ajuste a quantidade e clique em Calcular para ver a cobertura", fontsize=16, y=0.96, ha='center')
+        title_text = "Simulador Interativo - Distância Euclidiana"
+        subtitle_text = "Arraste os roteadores, ajuste a quantidade e clique em Calcular para ver a cobertura"
+
+        # Função para calcular o raio dos nós baseado no tamanho da menor aresta em pixels
+        def get_node_radius_px():
+            trans = ax.transData.transform
+            node_pos_px = {n: trans((n[0]*scale_factor, n[1]*scale_factor)) for n in G.nodes()}
+            edge_lengths = [
+                np.linalg.norm(np.array(node_pos_px[u]) - np.array(node_pos_px[v]))
+                for u, v in G.edges()
+            ]
+            if edge_lengths:
+                min_edge_px = min(edge_lengths)
+                return 0.8 * min_edge_px
+            else:
+                return 10
+
+        # Função para atualizar tamanhos de fonte e dos nós dinamicamente
+        def update_fonts(event=None):
+            w, h = fig.get_size_inches()*fig.dpi
+            base = min(w, h)
+            title_fontsize = max(18, base // 40)
+            subtitle_fontsize = max(12, base // 70)
+            label_fontsize = max(10, base // 90)
+            button_fontsize = max(10, base // 90)
+            slider_fontsize = max(10, base // 90)
+
+            if hasattr(fig, '_main_title'):
+                fig._main_title.set_fontsize(title_fontsize)
+            if hasattr(fig, '_subtitle'):
+                fig._subtitle.set_fontsize(subtitle_fontsize)
+            slider_routers.label.set_fontsize(label_fontsize)
+            slider_routers.valtext.set_fontsize(slider_fontsize)
+            btn_calculate.label.set_fontsize(button_fontsize)
+
+            if hasattr(fig, '_coverage_title') and fig._coverage_title is not None:
+                fig._coverage_title.set_fontsize(label_fontsize)
+            ax.title.set_fontsize(label_fontsize)
+
+            node_radius_px = get_node_radius_px()
+            node_size = np.pi * (node_radius_px ** 2)
+            nodes_plot.set_sizes([node_size] * len(G.nodes()))
+
+            if hasattr(fig, '_colorbar') and hasattr(fig._colorbar, 'set_label'):
+                fig._colorbar.set_label('RSSI (dBm)', fontsize=label_fontsize)
+            fig.canvas.draw_idle()
+
+        fig._main_title = fig.suptitle(title_text, fontsize=22, y=0.98, ha='center', fontweight='bold')
+        fig._subtitle = fig.text(0.5, 0.94, subtitle_text, fontsize=14, ha='center', va='top')
+
         ax.set_title("")
-        
+
         scale_factor = self.scale_factor
         pos = {n: (n[0] * scale_factor, n[1] * scale_factor) for n in G.nodes()}
         
         edge_colors = [self.weight_colors.get(G[u][v].get('weight', 1), 'black') for u, v in G.edges()]
         nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=1.2, alpha=0.6, ax=ax)
         
+        node_radius_px = 10
+        node_size = np.pi * (node_radius_px ** 2)
         nodes_plot = nx.draw_networkx_nodes(
             G, pos, node_color='lightgray',
-            node_size=80, ax=ax
+            node_size=node_size, ax=ax, alpha=0
         )
+        nodes_plot.set_zorder(1)
         
         router_scat = ax.scatter(
             [r[0]*scale_factor for r in routers],
             [r[1]*scale_factor for r in routers],
             s=300, c='black', edgecolors='yellow', linewidths=2, picker=True
         )
+        router_scat.set_zorder(2)
         
         dragged_idx = [None]
         current_routers = routers.copy()
@@ -290,11 +335,20 @@ class RouterOptimizer:
             nodes_plot.set_array(rssi_values)
             nodes_plot.set_cmap('RdYlGn')
             nodes_plot.set_clim(-90, -30)
+            nodes_plot.set_alpha(1.0)
             router_positions = ', '.join([str(tuple(int(x) for x in r)) for r in current_routers])
-            ax.set_title(
+            fig._coverage_title = ax.set_title(
                 f"Cobertura: {coverage:.1f}% | RSSI médio: {avg_rssi:.1f} dBm\n"
-                f"Posições dos roteadores: {router_positions}"
+                f"Posições dos roteadores: {router_positions}",
+                fontsize=max(10, min(fig.get_size_inches()*fig.dpi)//90)
             )
+
+            if not hasattr(fig, '_colorbar') or fig._colorbar is None:
+                cax = fig.add_axes([0.92, 0.25, 0.015, 0.6])
+                fig._colorbar = plt.colorbar(nodes_plot, cax=cax, label='RSSI (dBm)')
+                fig._colorbar.set_label('RSSI (dBm)', fontsize=max(10, min(fig.get_size_inches()*fig.dpi)//90))
+            else:
+                fig._colorbar.update_normal(nodes_plot)
             fig.canvas.draw_idle()
 
         def on_slider_change(val):
@@ -322,15 +376,31 @@ class RouterOptimizer:
             update_router_scatter()
 
             nodes_plot.set_array(np.full(len(nodes), np.nan))
+            nodes_plot.set_alpha(0)
             ax.set_title("")
             fig.canvas.draw_idle()
 
+        # Criação dos widgets após definição das funções de fonte
+        ax_button = plt.axes([0.45, 0.13, 0.1, 0.06])
+        btn_calculate = Button(ax_button, 'Calcular')
+
+        ax_slider = plt.axes([0.25, 0.05, 0.5, 0.04])
+        slider_routers = Slider(
+            ax_slider, 'Qtd. Roteadores', min_routers, max_routers, 
+            valinit=num_roteadores, valstep=1, valfmt='%0.0f'
+        )
+
+        # Conecta eventos
         fig.canvas.mpl_connect('pick_event', on_pick)
         fig.canvas.mpl_connect('motion_notify_event', on_motion)
         fig.canvas.mpl_connect('button_release_event', on_release)
         btn_calculate.on_clicked(calculate_coverage)
         slider_routers.on_changed(on_slider_change)
-        
+        fig.canvas.mpl_connect('resize_event', update_fonts)
+
+        # Inicializa fontes
+        update_fonts()
+
         plt.show()
 
     def _create_base_plot(self, G, routers, rssi_values=None):
