@@ -57,11 +57,6 @@ Para acelerar simulações em grandes grafos, é possível pré-computar todos o
 2. Selecione o arquivo `.graphml` do grafo quando solicitado.
 3. O script irá calcular e salvar um arquivo `.pkl.gz` com os dados ToA/AoA.
 4. Ao rodar o simulador, selecione esse arquivo quando solicitado para carregar os dados pré-computados.
-5. Para rodar a simulação automática com os dados pré-computados, execute:
-   ```bash
-   python AoA_ToA.py
-   ```
-   Siga as instruções na tela para selecionar o arquivo `.graphml` e, quando solicitado, selecione o arquivo `.pkl.gz` gerado na etapa anterior.
 
 > Recomenda-se usar a pré-computação para ambientes grandes ou simulações repetidas, pois reduz significativamente o tempo de execução.
 
@@ -182,11 +177,6 @@ To speed up simulations on large graphs, you can precompute all pairs of **Time 
 2. Select the `.graphml` graph file when prompted.
 3. The script will compute and save a `.pkl.gz` file with ToA/AoA data.
 4. When running the simulator, select this file when prompted to load precomputed data.
-5. To run the automatic simulation with precomputed data, execute:
-   ```bash
-   python AoA_ToA.py
-   ```
-   Follow the on-screen instructions to select the `.graphml` file and, when prompted, select the `.pkl.gz` file generated in the previous step.
 
 > Precomputation is recommended for large environments or repeated simulations, as it significantly reduces execution time.
 
