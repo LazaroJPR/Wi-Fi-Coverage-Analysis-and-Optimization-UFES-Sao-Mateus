@@ -17,9 +17,10 @@ Este projeto visa analisar e melhorar a cobertura Wi-Fi no campus da UFES em Sã
 ## 🧰 Ferramentas Desenvolvidas
 
 ### 1. Medidor de Velocidade Personalizado
-- Interface web para testes de conexão
-- Armazenamento de resultados em CSV e Google Sheets
-- Tecnologias: HTML5, CSS3, JavaScript, PHP, Python
+- 🚦 Interface web para testes de conexão
+- 💾 Armazenamento de resultados em CSV e Google Sheets
+- 🛠️ Tecnologias: HTML5, CSS3, JavaScript, PHP, Python
+- [Leia mais](SpeedTest-UFES/README.md)
 
 ### 2. Conversor de Plantas para Grafos de Propagação
 Sistema para transformação de plantas arquitetônicas em modelos de rede:
@@ -27,7 +28,21 @@ Sistema para transformação de plantas arquitetônicas em modelos de rede:
 - 🏗️ Processamento digital de plantas baixas  
 - 📡 Geração automática de grafos de navegação  
 - 🧱 Identificação de materiais construtivos  
-- 🖥️ Visualização da estrutura  
+- 📊 Visualização da estrutura  
+- [Leia mais](Criador%20de%20Grafos/README.md)
+
+### 3. Simulador de Cobertura Wi-Fi com Otimização de Roteadores (Distância Euclidiana)
+- 📡 Simulação da propagação do sinal Wi-Fi em ambientes internos usando grafos ponderados e distância euclidiana
+- 🤖 Otimização automática das posições dos roteadores
+- 📊 Visualização gráfica dos resultados
+- [Leia mais](Simulador%20Distancia%20Euclidiana/README.md)
+
+### 4. Simulador de Cobertura Wi-Fi com Otimização de Roteadores (AoA/ToA)
+- 📡 Simulação avançada considerando Ângulo de Chegada (AoA) e Tempo de Chegada (ToA)
+- ⚡ Suporte à pré-computação para ambientes grandes
+- 🤖 Otimização automática das posições dos roteadores
+- 📊 Visualização gráfica dos resultados
+- [Leia mais](Simulador%20AoA%20ToA/README.md)
 
 ## 📬 Contato
 
@@ -60,9 +75,10 @@ This project aims to analyze and improve Wi-Fi coverage at UFES São Mateus camp
 ## 🧰 Developed Tools
 
 ### 1. Custom Speed Test Tool
-- Web interface for connection testing
-- Result storage in CSV and Google Sheets
-- Technologies: HTML5, CSS3, JavaScript, PHP, Python
+- 🚦 Web interface for connection testing
+- 💾 Result storage in CSV and Google Sheets
+- 🛠️ Technologies: HTML5, CSS3, JavaScript, PHP, Python
+- [Read more](SpeedTest-UFES/README.md)
 
 ### 2. Floor Plan to Propagation Graph Converter
 System to convert architectural floor plans into network models:
@@ -70,7 +86,21 @@ System to convert architectural floor plans into network models:
 - 🏗️ Digital processing of blueprints  
 - 📡 Automatic generation of navigation graphs  
 - 🧱 Identification of construction materials  
-- 🖥️ Structural visualization  
+- 📊 Structural visualization  
+- [Read more](Criador%20de%20Grafos/README.md)
+
+### 3. Wi-Fi Coverage Simulator with Router Optimization (Euclidean Distance)
+- 📡 Simulates Wi-Fi signal propagation in indoor environments using weighted graphs and Euclidean distance
+- 🤖 Automatic router position optimization
+- 📊 Graphical visualization of results
+- [Read more](Simulador%20Distancia%20Euclidiana/README.md)
+
+### 4. Wi-Fi Coverage Simulator with Router Optimization (AoA/ToA)
+- 📡 Advanced simulation considering Angle of Arrival (AoA) and Time of Arrival (ToA)
+- ⚡ Supports precomputation for large environments
+- 🤖 Automatic router position optimization
+- 📊 Graphical visualization of results
+- [Read more](Simulador%20AoA%20ToA/README.md)
 
 ## 📬 Contact
 
