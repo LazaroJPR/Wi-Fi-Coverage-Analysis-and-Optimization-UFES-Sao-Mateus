@@ -45,13 +45,25 @@ Todos os parâmetros podem ser ajustados no arquivo `config.json`.
 - concurrent.futures (paralelização)
 - logging, json, os, shutil, zipfile (bibliotecas padrão)
 
-### Requisitos
+### Pré-computação de ToA/AoA
 
-Certifique-se de ter instalado:
-```bash
-pip install numpy networkx matplotlib scikit-learn
-```
-> Tkinter, concurrent.futures, logging, json, os e shutil já vêm com o Python padrão.
+Para acelerar simulações em grandes grafos, é possível pré-computar todos os pares de dados de **Tempo de Chegada (ToA)** e **Ângulo de Chegada (AoA)** usando o script `precompute_aoa_toa.py`. Isso gera um arquivo compactado com os resultados, que pode ser reutilizado em execuções futuras.
+
+**Como usar:**
+1. Execute o script:
+   ```bash
+   python precompute_aoa_toa.py
+   ```
+2. Selecione o arquivo `.graphml` do grafo quando solicitado.
+3. O script irá calcular e salvar um arquivo `.pkl.gz` com os dados ToA/AoA.
+4. Ao rodar o simulador, selecione esse arquivo quando solicitado para carregar os dados pré-computados.
+5. Para rodar a simulação automática com os dados pré-computados, execute:
+   ```bash
+   python AoA_ToA.py
+   ```
+   Siga as instruções na tela para selecionar o arquivo `.graphml` e, quando solicitado, selecione o arquivo `.pkl.gz` gerado na etapa anterior.
+
+> Recomenda-se usar a pré-computação para ambientes grandes ou simulações repetidas, pois reduz significativamente o tempo de execução.
 
 ## 🚀 Funcionalidades
 
@@ -158,13 +170,25 @@ All parameters can be adjusted in `config.json`.
 - concurrent.futures (parallelization)
 - logging, json, os, shutil, zipfile (standard libraries)
 
-### Requirements
+### ToA/AoA Precomputation
 
-Make sure you have installed:
-```bash
-pip install numpy networkx matplotlib scikit-learn
-```
-> Tkinter, concurrent.futures, logging, json, os and shutil are included in standard Python.
+To speed up simulations on large graphs, you can precompute all pairs of **Time of Arrival (ToA)** and **Angle of Arrival (AoA)** data using the `precompute_aoa_toa.py` script. This generates a compressed file with the results, which can be reused in future runs.
+
+**How to use:**
+1. Run the script:
+   ```bash
+   python precompute_aoa_toa.py
+   ```
+2. Select the `.graphml` graph file when prompted.
+3. The script will compute and save a `.pkl.gz` file with ToA/AoA data.
+4. When running the simulator, select this file when prompted to load precomputed data.
+5. To run the automatic simulation with precomputed data, execute:
+   ```bash
+   python AoA_ToA.py
+   ```
+   Follow the on-screen instructions to select the `.graphml` file and, when prompted, select the `.pkl.gz` file generated in the previous step.
+
+> Precomputation is recommended for large environments or repeated simulations, as it significantly reduces execution time.
 
 ## 🚀 Features
 
