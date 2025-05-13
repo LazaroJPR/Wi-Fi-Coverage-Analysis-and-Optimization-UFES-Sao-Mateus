@@ -1,9 +1,9 @@
 <details open>
   <summary><strong>🇧🇷 Português</strong></summary>
 
-<h1>📡 Simulador de Cobertura Wi-Fi com Otimização de Roteadores</h1>
+<h1>📡 Simulador de Cobertura Wi-Fi com Otimização de Roteadores (AoA/ToA)</h1>
 
-Este módulo realiza simulações de cobertura Wi-Fi em ambientes internos, utilizando um **grafo ponderado** (gerado a partir de uma planta baixa) para calcular a propagação do sinal, considerando obstáculos (paredes, portas, janelas, etc) e a distância euclidiana. O sistema busca automaticamente as melhores posições para roteadores, maximizando a cobertura e o nível de sinal (RSSI).
+Este módulo realiza simulações de cobertura Wi-Fi em ambientes internos utilizando técnicas de **Ângulo de Chegada (AoA)** e **Tempo de Chegada (ToA)**, baseando-se em um **grafo ponderado** (gerado a partir de uma planta baixa). O sistema calcula a propagação do sinal considerando obstáculos (paredes, portas, janelas, etc.), distância e efeitos de AoA/ToA, buscando automaticamente as melhores posições para roteadores para maximizar a cobertura e o nível de sinal (RSSI).
 
 ## 📌 Exemplo Visual
 
@@ -15,9 +15,9 @@ O grafo ponderado deve ser gerado previamente pelo módulo "Criador de Grafos" e
 
 ### Resultado da simulação
 
-![Simulação Gerada](https://github.com/LazaroJPR/TCC/blob/main/Dados/Simulações/simulacao.png)
-
 O simulador gera imagens de cobertura, destacando a intensidade do sinal em cada ponto e as posições ideais dos roteadores.
+
+![Simulação Gerada](https://github.com/LazaroJPR/TCC/blob/main/Dados/Simulações/simulacao.png)
 
 ## ⚙️ Parâmetros Principais
 
@@ -30,6 +30,7 @@ O simulador gera imagens de cobertura, destacando a intensidade do sinal em cada
 | max_iter            | Número de iterações de busca por melhores posições     | 20                   |
 | num_roteadores      | Quantidade de roteadores a posicionar                  | 1                    |
 | plot_save_path      | Pasta para salvar resultados e imagens                 | C:\\Caminho\\pasta   |
+| noise_factor        | Fator de ruído para simulação de ToA                   | 0.05                 |
 
 Todos os parâmetros podem ser ajustados no arquivo `config.json`.
 
@@ -55,11 +56,11 @@ pip install numpy networkx matplotlib scikit-learn
 ## 🚀 Funcionalidades
 
 - Carregamento de grafos ponderados em `.graphml`
-- Simulação da propagação do sinal Wi-Fi considerando obstáculos
+- Simulação da propagação do sinal Wi-Fi considerando obstáculos, AoA e ToA
 - Otimização automática das posições dos roteadores (paralelizada)
 - Geração de imagens de cobertura e exportação dos melhores resultados em `.zip`
 - Parâmetros totalmente configuráveis via `config.json`
-- **Modo interativo:** Posicionamento manual e visualização dinâmica dos roteadores com cálculo instantâneo de cobertura e RSSI médio (`euclideanDistance_interactive.py`)
+- **Modo interativo:** Posicionamento manual e visualização dinâmica dos roteadores com cálculo instantâneo de cobertura e RSSI médio (`AoA_ToA_interactive.py`)
 
 ## 📦 Como Usar
 
@@ -67,11 +68,11 @@ pip install numpy networkx matplotlib scikit-learn
 2. Ajuste os parâmetros desejados no `config.json`.
 3. Para simulação automática, execute:
    ```bash
-   python euclideanDistance.py
+   python AoA_ToA.py
    ```
    Para simulação interativa, execute:
    ```bash
-   python euclideanDistance_interactive.py
+   python AoA_ToA_interactive.py
    ```
 4. Selecione o arquivo `.graphml` do grafo quando solicitado.
 5. Os melhores resultados serão salvos na pasta definida em `plot_save_path` (imagens e dados em `.zip`).  
@@ -97,24 +98,25 @@ pip install numpy networkx matplotlib scikit-learn
     },
     "plot_save_path": "C:\\Caminho\\para\\salvar",
     "num_roteadores": 1,
-    "router_name": "Cisco AIR-AP-2802I-Z-K9-BR"
+    "router_name": "Cisco AIR-AP-2802I-Z-K9-BR",
+    "noise_factor": 0.05
 }
 ```
 
 ## 🎯 Aplicações
 
-- Planejamento de cobertura Wi-Fi em ambientes internos
+- Planejamento de cobertura Wi-Fi em ambientes internos com técnicas de AoA/ToA
 - Simulações para projetos de redes sem fio
-- Ensino e pesquisa em propagação de sinais e otimização
+- Ensino e pesquisa em propagação de sinais, localização e otimização
 
 </details>
 
 <details>
   <summary><strong>🇺🇸 English</strong></summary>
 
-<h1>📡 Wi-Fi Coverage Simulator with Router Optimization</h1>
+<h1>📡 Wi-Fi Coverage Simulator with Router Optimization (AoA/ToA)</h1>
 
-This module simulates indoor Wi-Fi coverage using a **weighted graph** (generated from a floor plan) to calculate signal propagation, considering obstacles (walls, doors, windows, etc.) and Euclidean distance. The system automatically searches for the best router positions to maximize coverage and signal strength (RSSI).
+This module simulates indoor Wi-Fi coverage using **Angle of Arrival (AoA)** and **Time of Arrival (ToA)** techniques, based on a **weighted graph** (generated from a floor plan). The system calculates signal propagation considering obstacles (walls, doors, windows, etc.), distance, and AoA/ToA effects, automatically searching for the best router positions to maximize coverage and signal strength (RSSI).
 
 ## 📌 Visual Example
 
@@ -126,9 +128,9 @@ The weighted graph must be previously generated by the "Graph Creator" module an
 
 ### Simulation Result
 
-![Generated Simulation](https://github.com/LazaroJPR/TCC/blob/main/Dados/Simulações/simulacao.png)
-
 The simulator generates coverage images, highlighting signal intensity at each point and the optimal router positions.
+
+![Generated Simulation](https://github.com/LazaroJPR/TCC/blob/main/Dados/Simulações/simulacao.png)
 
 ## ⚙️ Main Parameters
 
@@ -141,6 +143,7 @@ The simulator generates coverage images, highlighting signal intensity at each p
 | max_iter            | Number of optimization iterations                   | 20                   |
 | num_roteadores      | Number of routers to place                          | 1                    |
 | plot_save_path      | Folder to save results and images                   | C:\\Path\\to\\save   |
+| noise_factor        | Noise factor for ToA simulation                     | 0.05                 |
 
 All parameters can be adjusted in `config.json`.
 
@@ -166,11 +169,11 @@ pip install numpy networkx matplotlib scikit-learn
 ## 🚀 Features
 
 - Load weighted graphs in `.graphml`
-- Simulate Wi-Fi signal propagation considering obstacles
+- Simulate Wi-Fi signal propagation considering obstacles, AoA and ToA
 - Automatic router position optimization (parallelized)
 - Generate coverage images and export best results in `.zip`
 - Fully configurable via `config.json`
-- **Interactive mode:** Manually place and move routers with instant coverage and RSSI feedback (`euclideanDistance_interactive.py`)
+- **Interactive mode:** Manually place and move routers with instant coverage and RSSI feedback (`AoA_ToA_interactive.py`)
 
 ## 📦 How to Use
 
@@ -178,11 +181,11 @@ pip install numpy networkx matplotlib scikit-learn
 2. Adjust desired parameters in `config.json`.
 3. For automatic simulation, run:
    ```bash
-   python euclideanDistance.py
+   python AoA_ToA.py
    ```
    For interactive simulation, run:
    ```bash
-   python euclideanDistance_interactive.py
+   python AoA_ToA_interactive.py
    ```
 4. Select the `.graphml` graph file when prompted.
 5. The best results will be saved in the folder defined in `plot_save_path` (images and data in `.zip`).  
@@ -208,14 +211,15 @@ pip install numpy networkx matplotlib scikit-learn
     },
     "plot_save_path": "C:\\Path\\to\\save",
     "num_roteadores": 1,
-    "router_name": "Cisco AIR-AP-2802I-Z-K9-BR"
+    "router_name": "Cisco AIR-AP-2802I-Z-K9-BR",
+    "noise_factor": 0.05
 }
 ```
 
 ## 🎯 Applications
 
-- Wi-Fi coverage planning for indoor environments
+- Wi-Fi coverage planning for indoor environments using AoA/ToA techniques
 - Simulations for wireless network projects
-- Teaching and research in signal propagation and optimization
+- Teaching and research in signal propagation, localization, and optimization
 
 </details>
