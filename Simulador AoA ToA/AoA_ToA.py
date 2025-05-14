@@ -45,13 +45,19 @@ def calc_distance_toa(toa, c=SPEED_OF_LIGHT):
     """Calcula a distância a partir do tempo de chegada (ToA)."""
     return toa * c
 
-def calc_aoa(source, target):
-    """Calcula o ângulo de chegada (AoA) entre dois nós."""
-    dx = target[0] - source[0]
-    dy = target[1] - source[1]
-    angle_rad = np.arctan2(dy, dx)
-    angle_deg = np.degrees(angle_rad)
-    return angle_deg
+def calc_aoa_influence(aoa, expected_angle, obstacle_loss=0):
+    """Calcula o impacto do AoA no RSSI para antenas omnidirecionais."""
+    # Diferença angular (indica reflexão)
+    angle_diff = min(abs(aoa - expected_angle), abs(360 - abs(aoa - expected_angle)))
+    
+    # Quanto maior a diferença angular, maior a probabilidade do sinal ter sido refletido
+    reflection_indicator = min(1.0, angle_diff / 180.0)
+    
+    # Atenuação baseada na diferença angular e obstáculos
+    # Reflexões fortes em ambientes com muitos obstáculos causam maior atenuação
+    attenuation = -1.5 * reflection_indicator * (1 + obstacle_loss/30)
+    
+    return attenuation
 
 def iteration_task(
     iteration,
@@ -64,7 +70,8 @@ def iteration_task(
     freq_mhz,
     distance_conversion,
     weight_colors,
-    toa_data
+    toa_data,
+    aoa_data=None
 ):
     """Executa uma iteração de busca de roteadores em paralelo."""
     import numpy as np
@@ -91,8 +98,10 @@ def iteration_task(
 
     # Centraliza o cálculo de RSSI e penalidade usando métodos estáticos
     rssi_values = RouterOptimizerAoAToA.compute_rssi_for_nodes_static(
-        G, combo, tx_power, freq_mhz, distance_conversion, toa_data, rssi_func=RouterOptimizerAoAToA.compute_rssi_for_node_static
+        G, combo, tx_power, freq_mhz, distance_conversion, toa_data, aoa_data,
+        rssi_func=RouterOptimizerAoAToA.compute_rssi_for_node_static
     )
+    
     rssi_values = np.array(rssi_values)
     coverage = np.sum(rssi_values >= rssi_threshold) / len(rssi_values) * 100
     valid_rssi = rssi_values[rssi_values > -100]
@@ -187,19 +196,19 @@ class RouterOptimizerAoAToA:
         return get_path_and_loss(G, source, target)
     
     @staticmethod
-    def compute_rssi_for_nodes_static(G, routers, tx_power, freq_mhz, distance_conversion, toa_data, rssi_func=None):
-        """Calcula o melhor RSSI para todos os nós do grafo usando ToA."""
+    def compute_rssi_for_nodes_static(G, routers, tx_power, freq_mhz, distance_conversion, toa_data, aoa_data=None, rssi_func=None):
+        """Calcula o melhor RSSI para todos os nós do grafo usando ToA e AoA."""
         if rssi_func is None:
             rssi_func = RouterOptimizerAoAToA.compute_rssi_for_node_static
         node_list = list(G.nodes())
         return [
-            rssi_func(G, node, routers, tx_power, freq_mhz, distance_conversion, toa_data)
+            rssi_func(G, node, routers, tx_power, freq_mhz, distance_conversion, toa_data, aoa_data)
             for node in node_list
         ]
 
     @staticmethod
-    def compute_rssi_for_node_static(G, node, routers, tx_power, freq_mhz, distance_conversion, toa_data):
-        """Calcula o melhor RSSI para um nó em relação aos roteadores usando ToA (static, para uso externo)."""
+    def compute_rssi_for_node_static(G, node, routers, tx_power, freq_mhz, distance_conversion, toa_data, aoa_data=None):
+        """Calcula o melhor RSSI para um nó em relação aos roteadores usando ToA e AoA."""
         best_rssi = -100.0
 
         for router in routers:
@@ -213,32 +222,48 @@ class RouterOptimizerAoAToA:
             if toa is None:
                 continue
 
+            # Calcula o ângulo esperado (linha reta entre nós)
+            dx = node[0] - router[0]
+            dy = node[1] - router[1]
+            expected_angle = (np.degrees(np.arctan2(dy, dx)) + 180) % 360
+
+            # Aplica o impacto do AoA se disponível
+            aoa_factor = 0
+            if aoa_data:
+                aoa = aoa_data.get((router, node), None)
+                if aoa is not None:
+                    aoa_factor = calc_aoa_influence(aoa, expected_angle, obstacle_loss)
+
             distance = max(calc_distance_toa(toa), distance_conversion)
             fspl = calc_fspl(distance, freq_mhz)
-            rssi = tx_power - fspl - obstacle_loss
+            
+            # Adicionar o fator de AoA ao cálculo do RSSI
+            rssi = tx_power - fspl - obstacle_loss + aoa_factor
+            
             if rssi > best_rssi:
                 best_rssi = rssi
         return best_rssi
 
-    def compute_rssi_for_node(self, G, node, routers, toa_data):
+    def compute_rssi_for_node(self, G, node, routers, toa_data, aoa_data=None):
         """Calcula o melhor RSSI para um nó em relação aos roteadores."""
         return RouterOptimizerAoAToA.compute_rssi_for_node_static(
-            G, node, routers, self.tx_power, self.freq_mhz, self.distance_conversion, toa_data
+            G, node, routers, self.tx_power, self.freq_mhz, self.distance_conversion, toa_data, aoa_data
         )
 
-    def evaluate_coverage(self, G, routers, toa_data=None):
+    def evaluate_coverage(self, G, routers, toa_data=None, aoa_data=None):
         """Avalia a cobertura e RSSI médio para uma configuração de roteadores."""
-        logging.debug("Calculando cobertura e RSSI médio usando ToA.")
+        logging.debug("Calculando cobertura e RSSI médio usando ToA e AoA.")
         node_list = list(G.nodes())
 
         if toa_data is None and not self.toa_data:
-            self.toa_data, _ = self.generate_toa_aoa_data(G, node_list)
+            self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, node_list)
 
         toa_data = toa_data or self.toa_data
+        aoa_data = aoa_data or getattr(self, 'aoa_data', {})
 
         with ThreadPoolExecutor() as executor:
             rssi_values = list(executor.map(
-                lambda node: self.compute_rssi_for_node(G, node, routers, toa_data),
+                lambda node: self.compute_rssi_for_node(G, node, routers, toa_data, aoa_data),
                 node_list
             ))
         rssi_values = np.array(rssi_values)
@@ -400,7 +425,7 @@ class RouterOptimizerAoAToA:
 
         nodes = list(G.nodes())
         if not self.toa_data:
-            self.toa_data, _ = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
+            self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
 
         num_roteadores = getattr(self, "num_roteadores", None)
         if num_roteadores is None:
