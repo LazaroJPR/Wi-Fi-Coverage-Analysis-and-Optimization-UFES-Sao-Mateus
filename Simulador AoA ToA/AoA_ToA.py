@@ -69,11 +69,13 @@ def iteration_task(
     tx_power,
     freq_mhz,
     distance_conversion,
-    weight_colors,
     toa_data,
     aoa_data=None,
     elite_positions=None,
-    total_overall_iterations=None
+    total_overall_iterations=None,
+    last_best_score=None,
+    no_improve_count=None,
+    adapt_threshold=10
 ):
     """Executa uma iteração de busca de roteadores em paralelo."""
     import numpy as np
@@ -87,39 +89,45 @@ def iteration_task(
     local_candidate_nodes = candidate_nodes_snapshot.copy()
     nodes_local = nodes.copy()
     
-    # Estratégia adaptativa baseada na fase da busca
-    exploration_boundary = 0
-    if total_overall_iterations is not None and total_overall_iterations > 0:
-        exploration_boundary = total_overall_iterations // 3
+     # Estratégia adaptativa baseada em progresso da busca
+    # Se não houve melhora por adapt_threshold iterações, força exploração
+    if no_improve_count is not None and no_improve_count >= adapt_threshold:
+        exploration_phase = True
+        phase_str = "Exploração (forçada por estagnação)"
     else:
-        total_overall_iterations = iteration + 1
+        block_size = 30
+        exploration_block = int(block_size / 3)
+        block_pos = iteration % block_size
+        if block_pos < exploration_block:
+            exploration_phase = True
+            phase_str = "exploração"
+        else:
+            exploration_phase = False
+            phase_str = "intensificação"
 
-    exploration_phase = iteration < exploration_boundary
-    
     if len(local_candidate_nodes) < num_roteadores:
         local_candidate_nodes = nodes_local
 
     # Estratégia de perturbação baseada na fase da busca
-    if iteration % 10 == 0:
+    block_start = (iteration // block_size) * block_size
+    if exploration_phase:
+        block_end = block_start + exploration_block
+    else:
+        block_end = block_start + block_size
+        block_start = block_start + exploration_block
+
+    if iteration == block_start:
+        logging.info(
+            f"Iteração {iteration}/{block_end - 1}: Fase de {phase_str}."
+        )
         if exploration_phase:
             # Fase de exploração: mais diversidade
-            num_exploration_iters = exploration_boundary
-            logging.info(
-                f"Iteração {iteration + 1}/{total_overall_iterations}: Fase de Exploração "
-                f"(primeiras {num_exploration_iters} iterações). Perturbação: exploração ampla."
-            )
             mutation_size = min(40, len(nodes_local))
             mutation_nodes = [nodes_local[i] for i in np.random.choice(
                 len(nodes_local), mutation_size, replace=False)]
             local_candidate_nodes = list(set(local_candidate_nodes[:len(local_candidate_nodes)//2] + mutation_nodes))
         else:
             # Fase de intensificação: aproveitar as melhores posições encontradas
-            num_intensification_iters = total_overall_iterations - exploration_boundary
-            logging.info(
-                f"Iteração {iteration + 1}/{total_overall_iterations}: Fase de Intensificação "
-                f"(iter. {exploration_boundary + 1} a {total_overall_iterations}, total {num_intensification_iters} iterações). Perturbação: intensificação."
-            )
-            # Mantém algumas posições elite e adiciona variações próximas
             if elite_positions and len(elite_positions) > 0:
                 elite_selection = random.sample(elite_positions, min(num_roteadores//2 + 1, len(elite_positions))
                 )
@@ -446,7 +454,6 @@ class RouterOptimizerAoAToA:
                     self.tx_power,
                     self.freq_mhz,
                     self.distance_conversion,
-                    self.weight_colors,
                     self.toa_data,
                     self.aoa_data,
                     elite_positions=self.solution_memory.get_elite_positions(),
