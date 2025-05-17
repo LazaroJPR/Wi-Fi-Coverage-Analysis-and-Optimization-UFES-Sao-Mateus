@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import filedialog
 import logging
 import json
+import threading
 
 # Configuração básica do logging
 logging.basicConfig(
@@ -47,30 +48,99 @@ def iteration_task(
     tx_power,
     freq_mhz,
     distance_conversion,
-    weight_colors
+    elite_positions=None,
+    no_improve_count=None,
+    adapt_threshold=10
 ):
     """Executa uma iteração de busca de roteadores em paralelo."""
     import numpy as np
     import networkx as nx
     import logging
+    import random
 
     # Reconstrói o grafo a partir dos dados serializados
     G = nx.node_link_graph(G_data, edges="links")
-    np.random.seed()  # Garante aleatoriedade em cada processo
+    np.random.seed()
     local_candidate_nodes = candidate_nodes_snapshot.copy()
     nodes_local = nodes.copy()
+
+    # Estratégia adaptativa baseada em progresso da busca
+    # Se não houve melhora por adapt_threshold iterações, força exploração
+    if no_improve_count is not None and no_improve_count >= adapt_threshold:
+        exploration_phase = True
+        phase_str = "Exploração (forçada por estagnação)"
+    else:
+        block_size = 30
+        exploration_block = int(block_size / 3)
+        block_pos = iteration % block_size
+        if block_pos < exploration_block:
+            exploration_phase = True
+            phase_str = "exploração"
+        else:
+            exploration_phase = False
+            phase_str = "intensificação"
+
     if len(local_candidate_nodes) < num_roteadores:
         local_candidate_nodes = nodes_local
 
-    if iteration % 10 == 0:
-        logging.debug(f"Iteração {iteration}: realizando mutação nos candidatos.")
-        mutation_nodes = [nodes_local[i] for i in np.random.choice(
-            len(nodes_local), min(40, len(nodes_local)), replace=False)]
-        local_candidate_nodes = list(set(local_candidate_nodes[:len(local_candidate_nodes)//2] + mutation_nodes))
+    # Estratégia de perturbação baseada na fase da busca
+    block_start = (iteration // block_size) * block_size
+    if exploration_phase:
+        block_end = block_start + exploration_block
+    else:
+        block_end = block_start + block_size
+        block_start = block_start + exploration_block
+
+    if iteration == block_start:
+        logging.info(
+            f"Iteração {iteration}/{block_end - 1}: Fase de {phase_str}."
+        )
+        if exploration_phase:
+            # Fase de exploração: mais diversidade
+            mutation_size = min(40, len(nodes_local))
+            mutation_nodes = [nodes_local[i] for i in np.random.choice(
+                len(nodes_local), mutation_size, replace=False)]
+            local_candidate_nodes = list(set(local_candidate_nodes[:len(local_candidate_nodes)//2] + mutation_nodes))
+        else:
+            # Fase de intensificação: aproveitar as melhores posições encontradas
+            if elite_positions and len(elite_positions) > 0:
+                elite_selection = random.sample(elite_positions, min(num_roteadores//2 + 1, len(elite_positions))
+                )
+                neighborhood_nodes = []
+                for pos in elite_selection:
+                    # Encontra nós próximos no grafo (vizinhança)
+                    neighbors = []
+                    for node in nodes_local:
+                        dist = np.hypot(node[0] - pos[0], node[1] - pos[1])
+                        if 0 < dist < 10:
+                            neighbors.append(node)
+                    if neighbors:
+                        neighborhood_nodes.extend(random.sample(neighbors, min(3, len(neighbors))))
+                
+                # Adiciona alguns nós aleatórios para manter diversidade
+                random_nodes = [nodes_local[i] for i in np.random.choice(
+                    len(nodes_local), min(20, len(nodes_local)), replace=False)]
+                
+                # Combina as diferentes fontes de nós
+                local_candidate_nodes = list(set(elite_selection + neighborhood_nodes + random_nodes))
+            else:
+                # Se não tiver elite, usa estratégia padrão
+                mutation_nodes = [nodes_local[i] for i in np.random.choice(
+                    len(nodes_local), min(40, len(nodes_local)), replace=False)]
+                local_candidate_nodes = list(set(local_candidate_nodes[:len(local_candidate_nodes)//2] + mutation_nodes))
 
     selected_indices = np.random.choice(
         len(local_candidate_nodes), size=num_roteadores, replace=False)
     combo = [local_candidate_nodes[i] for i in selected_indices]
+
+    # Se temos soluções elite e não estamos na fase de exploração, às vezes usamos uma combinação de posições elite
+    if elite_positions and not exploration_phase and random.random() < 0.3 and len(elite_positions) > 0:
+        available_elite = elite_positions.copy()
+        if len(available_elite) >= num_roteadores:
+            combo = random.sample(available_elite, num_roteadores)
+        else:
+            combo = available_elite + [local_candidate_nodes[i] for i in np.random.choice(
+                len(local_candidate_nodes), size=num_roteadores-len(available_elite), replace=False)]
 
     # Centraliza o cálculo de RSSI e penalidade usando métodos estáticos
     rssi_values = RouterOptimizer.compute_rssi_for_nodes_static(
@@ -87,7 +157,7 @@ def iteration_task(
     coverage_norm = coverage / 100.0
     avg_rssi_norm = (avg_rssi + 90) / 60
 
-    score = 0.6 * avg_rssi_norm + 0.4 * coverage_norm - 0.1 * penalty
+    score = 0.3 * avg_rssi_norm + 0.7 * coverage_norm - 0.1 * penalty
 
     return {
         'routers': combo,
@@ -96,6 +166,41 @@ def iteration_task(
         'score': score,
         'rssi_values': rssi_values.tolist()
     }
+
+class SolutionMemory:
+    """Armazena e gerencia as melhores soluções encontradas durante o processo de otimização."""
+    def __init__(self, max_size=10):
+        self.solutions = []
+        self.max_size = max_size
+        self._lock = threading.RLock()
+
+    def add_solution(self, solution):
+        """Adiciona uma solução à memória, mantendo apenas as melhores."""
+        with self._lock:
+            self.solutions.append(solution)
+            self.solutions = sorted(self.solutions, key=lambda x: x['score'], reverse=True)[:self.max_size]
+
+    def get_best_solutions(self, n=None):
+        """Retorna as n melhores soluções da memória."""
+        with self._lock:
+            n = n or self.max_size
+            return self.solutions[:min(n, len(self.solutions))]
+    
+    def get_best_router_positions(self, n=None):
+        """Retorna as posições dos roteadores das n melhores soluções."""
+        with self._lock:
+            solutions = self.get_best_solutions(n)
+            return [sol['routers'] for sol in solutions]
+    
+    def get_elite_positions(self):
+        """Retorna um conjunto de posições combinadas das melhores soluções."""
+        with self._lock:
+            if not self.solutions:
+                return []
+            all_positions = []
+            for sol in self.solutions[:min(3, len(self.solutions))]:
+                all_positions.extend(sol['routers'])
+            return list(set(all_positions))
 
 class RouterOptimizer:
     def __init__(self):
@@ -116,6 +221,7 @@ class RouterOptimizer:
         self.top_n = config.get("top_n", 10)
         self.num_roteadores = config.get("num_roteadores", 1)
         self.router_name = config.get("router_name", "Roteador")
+        self.max_workers = config.get("max_workers", os.cpu_count() or 2)
 
         weight_colors_cfg = config.get("weight_colors", {
             "16.67": "blue",    # Parede (concreto)
@@ -129,6 +235,7 @@ class RouterOptimizer:
         self.plot_save_path = config.get("plot_save_path", ".")
 
         logging.info("RouterOptimizer inicializado com config.json.")
+        self.solution_memory = SolutionMemory(max_size=20)
 
     def load_graph(self):
         """Carrega o grafo do usuário via diálogo Tkinter."""
@@ -243,7 +350,6 @@ class RouterOptimizer:
                                 for c in centroids]
         candidate_nodes = list(set(candidate_nodes + centroid_nearest_nodes))
 
-        max_workers = os.cpu_count() or 4
         total_iterations = self.max_iter
 
         # Snapshot dos candidatos para evitar problemas de concorrência
@@ -252,8 +358,8 @@ class RouterOptimizer:
         # Serializa o grafo para passar entre processos
         G_data = nx.node_link_data(G, edges="links")
 
-        logging.info(f"Executando {total_iterations} iterações em paralelo com {max_workers} processos.")
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        logging.info(f"Executando {total_iterations} iterações em paralelo com {self.max_workers} processos.")
+        with ProcessPoolExecutor(max_workers=self.max_workers)as executor:
             futures = [
                 executor.submit(
                     iteration_task,
@@ -266,13 +372,15 @@ class RouterOptimizer:
                     self.tx_power,
                     self.freq_mhz,
                     self.distance_conversion,
-                    self.weight_colors
+                    elite_positions=self.solution_memory.get_elite_positions(),
+                    no_improve_count=None
                 )
                 for iteration in range(total_iterations)
             ]
             for idx, future in enumerate(as_completed(futures), 1):
                 try:
                     solution = future.result()
+                    self.solution_memory.add_solution(solution)
                     best_solutions.append(solution)
                     # Mantém apenas as top_n melhores
                     best_solutions = sorted(best_solutions, key=lambda x: x['score'], reverse=True)[:self.top_n]

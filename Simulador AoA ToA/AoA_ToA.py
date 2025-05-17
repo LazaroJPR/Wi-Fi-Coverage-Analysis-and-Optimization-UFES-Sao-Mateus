@@ -72,8 +72,6 @@ def iteration_task(
     toa_data,
     aoa_data=None,
     elite_positions=None,
-    total_overall_iterations=None,
-    last_best_score=None,
     no_improve_count=None,
     adapt_threshold=10
 ):
@@ -457,7 +455,6 @@ class RouterOptimizerAoAToA:
                     self.toa_data,
                     self.aoa_data,
                     elite_positions=self.solution_memory.get_elite_positions(),
-                    total_overall_iterations=total_iterations
                 )
                 for iteration in range(total_iterations)
             ]
