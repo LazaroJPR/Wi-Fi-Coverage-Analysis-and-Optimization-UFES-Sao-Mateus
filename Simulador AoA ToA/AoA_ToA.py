@@ -439,25 +439,30 @@ class RouterOptimizerAoAToA:
         G_data = nx.node_link_data(G, edges="links")
 
         logging.info(f"Executando {total_iterations} iterações em paralelo com {self.max_workers} processos.")
-        with ProcessPoolExecutor(max_workers=self.max_workers)as executor:
-            futures = [
-                executor.submit(
-                    iteration_task,
-                    iteration,
-                    candidate_nodes_snapshot,
-                    nodes,
-                    num_roteadores,
-                    G_data,
-                    self.rssi_threshold,
-                    self.tx_power,
-                    self.freq_mhz,
-                    self.distance_conversion,
-                    self.toa_data,
-                    self.aoa_data,
-                    elite_positions=self.solution_memory.get_elite_positions(),
+        no_improve_count = 0
+        best_score = float('-inf')
+
+        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for iteration in range(total_iterations):
+                futures.append(
+                    executor.submit(
+                        iteration_task,
+                        iteration,
+                        candidate_nodes_snapshot,
+                        nodes,
+                        num_roteadores,
+                        G_data,
+                        self.rssi_threshold,
+                        self.tx_power,
+                        self.freq_mhz,
+                        self.distance_conversion,
+                        self.toa_data,
+                        self.aoa_data,
+                        elite_positions=self.solution_memory.get_elite_positions(),
+                        no_improve_count=no_improve_count
+                    )
                 )
-                for iteration in range(total_iterations)
-            ]
             for idx, future in enumerate(as_completed(futures), 1):
                 try:
                     solution = future.result()
@@ -465,6 +470,11 @@ class RouterOptimizerAoAToA:
                     best_solutions.append(solution)
                     # Mantém apenas as top_n melhores
                     best_solutions = sorted(best_solutions, key=lambda x: x['score'], reverse=True)[:self.top_n]
+                    if solution['score'] > best_score:
+                        best_score = solution['score']
+                        no_improve_count = 0
+                    else:
+                        no_improve_count += 1
                     if idx % 20 == 0 or idx == total_iterations:
                         logging.info(f"Iterações concluídas: {idx}/{total_iterations}")
                 except Exception as e:
