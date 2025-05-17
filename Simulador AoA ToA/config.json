@@ -4,7 +4,7 @@
     "freq_mhz": 2400,
     "scale_factor": 2,
     "distance_conversion": 0.5,
-    "max_iter": 10,
+    "max_iter": 1000,
     "top_n": 10,
     "weight_colors": {
         "16.67": "blue",
@@ -13,9 +13,10 @@
         "4": "yellow",
         "1": "gray"
     },
-    "plot_save_path": "C:\\Users\\lazar\\Desktop\\Nova pasta\\",
-    "precomputation_save_path": "C:\\Users\\lazar\\Desktop\\Pre-computacao\\",
+    "plot_save_path": "LOCATION",
+    "precomputation_save_path": "LOCATION",
     "num_roteadores": 2,
-    "router_name": "Cisco AIR-AP-2802I-Z-K9-BR",
+    "router_name": "ROUTER",
+    "max_workers": 2,
     "noise_factor": 0.05
 }

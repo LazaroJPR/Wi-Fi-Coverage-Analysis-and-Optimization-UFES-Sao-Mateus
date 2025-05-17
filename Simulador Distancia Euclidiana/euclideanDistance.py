@@ -49,8 +49,6 @@ def iteration_task(
     freq_mhz,
     distance_conversion,
     elite_positions=None,
-    total_overall_iterations=None,
-    last_best_score=None,
     no_improve_count=None,
     adapt_threshold=10
 ):
@@ -375,8 +373,6 @@ class RouterOptimizer:
                     self.freq_mhz,
                     self.distance_conversion,
                     elite_positions=self.solution_memory.get_elite_positions(),
-                    total_overall_iterations=total_iterations,
-                    last_best_score=None,
                     no_improve_count=None
                 )
                 for iteration in range(total_iterations)
