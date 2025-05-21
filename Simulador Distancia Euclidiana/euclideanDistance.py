@@ -50,7 +50,9 @@ def iteration_task(
     distance_conversion,
     elite_positions=None,
     no_improve_count=None,
-    adapt_threshold=10
+    adapt_threshold=10,
+    avg_rssi_weight=0.3,
+    coverage_weight=0.7
 ):
     """Executa uma iteração de busca de roteadores em paralelo."""
     import numpy as np
@@ -157,7 +159,7 @@ def iteration_task(
     coverage_norm = coverage / 100.0
     avg_rssi_norm = (avg_rssi + 90) / 60
 
-    score = 0.3 * avg_rssi_norm + 0.7 * coverage_norm - 0.1 * penalty
+    score = avg_rssi_weight * avg_rssi_norm + coverage_weight * coverage_norm - 0.1 * penalty
 
     return {
         'routers': combo,
@@ -222,6 +224,8 @@ class RouterOptimizer:
         self.num_roteadores = config.get("num_roteadores", 1)
         self.router_name = config.get("router_name", "Roteador")
         self.max_workers = config.get("max_workers", os.cpu_count() or 2)
+        self.avg_rssi_weight = config.get("avg_rssi_weight", 0.3)
+        self.coverage_weight = config.get("coverage_weight", 0.7)
 
         weight_colors_cfg = config.get("weight_colors", {
             "16.67": "blue",    # Parede (concreto)
@@ -379,7 +383,9 @@ class RouterOptimizer:
                         self.freq_mhz,
                         self.distance_conversion,
                         elite_positions=self.solution_memory.get_elite_positions(),
-                        no_improve_count=no_improve_count
+                        no_improve_count=no_improve_count,
+                        avg_rssi_weight=self.avg_rssi_weight,
+                        coverage_weight=self.coverage_weight
                     )
                 )
             for idx, future in enumerate(as_completed(futures), 1):

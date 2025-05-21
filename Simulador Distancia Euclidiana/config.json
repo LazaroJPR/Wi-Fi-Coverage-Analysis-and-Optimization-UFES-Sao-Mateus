@@ -16,5 +16,7 @@
     "plot_save_path": "LOCATION",
     "num_roteadores": 4,
     "router_name": "ROUTER",
-    "max_workers": 16
+    "max_workers": 16,
+    "avg_rssi_weight": 0.3,
+    "coverage_weight": 0.7
 }

@@ -18,5 +18,7 @@
     "num_roteadores": 2,
     "router_name": "ROUTER",
     "max_workers": 2,
-    "noise_factor": 0.05
+    "noise_factor": 0.05,
+    "avg_rssi_weight": 0.3,
+    "coverage_weight": 0.7
 }
