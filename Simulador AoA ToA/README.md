@@ -21,16 +21,24 @@ O simulador gera imagens de cobertura, destacando a intensidade do sinal em cada
 
 ## ⚙️ Parâmetros Principais
 
-| Parâmetro           | Descrição                                              | Exemplo/Default      |
-|---------------------|--------------------------------------------------------|----------------------|
-| rssi_threshold      | Limite mínimo de RSSI para considerar cobertura        | -70                  |
-| tx_power            | Potência de transmissão do roteador (dBm)              | 23                   |
-| freq_mhz            | Frequência do Wi-Fi (MHz)                              | 2400                 |
-| distance_conversion | Fator de conversão de unidade do grafo para metros     | 0.5                  |
-| max_iter            | Número de iterações de busca por melhores posições     | 20                   |
-| num_roteadores      | Quantidade de roteadores a posicionar                  | 1                    |
-| plot_save_path      | Pasta para salvar resultados e imagens                 | C:\\Caminho\\pasta   |
-| noise_factor        | Fator de ruído para simulação de ToA                   | 0.05                 |
+| Parâmetro                | Descrição                                              |
+|--------------------------|--------------------------------------------------------|
+| rssi_threshold           | Limite mínimo de RSSI para considerar cobertura        |
+| tx_power                 | Potência de transmissão do roteador (dBm)              |
+| freq_mhz                 | Frequência do Wi-Fi (MHz)                              |
+| scale_factor             | Fator de escala para visualização                      |
+| distance_conversion      | Fator de conversão de unidade do grafo para metros     |
+| max_iter                 | Número de iterações de busca por melhores posições     |
+| top_n                    | Quantidade de melhores soluções salvas                 |
+| weight_colors            | Cores para pesos das arestas                           |
+| plot_save_path           | Pasta para salvar resultados e imagens                 |
+| precomputation_save_path | Pasta para salvar dados pré-computados                 |
+| num_roteadores           | Quantidade de roteadores a posicionar                  |
+| router_name              | Nome/modelo do roteador                                |
+| max_workers              | Número máximo de threads/processos paralelos           |
+| noise_factor             | Fator de ruído para simulação de ToA                   |
+| avg_rssi_weight          | Peso do RSSI médio na função objetivo                  |
+| coverage_weight          | Peso da cobertura na função objetivo                   |
 
 Todos os parâmetros podem ser ajustados no arquivo `config.json`.
 
@@ -94,8 +102,8 @@ Para acelerar simulações em grandes grafos, é possível pré-computar todos o
     "freq_mhz": 2400,
     "scale_factor": 2,
     "distance_conversion": 0.5,
-    "max_iter": 20,
-    "top_n": 10,
+    "max_iter": 500,
+    "top_n": 5,
     "weight_colors": {
         "16.67": "blue",
         "7": "red",
@@ -104,9 +112,13 @@ Para acelerar simulações em grandes grafos, é possível pré-computar todos o
         "1": "gray"
     },
     "plot_save_path": "C:\\Caminho\\para\\salvar",
-    "num_roteadores": 1,
+    "precomputation_save_path": "C:\\Caminho\\para\\salvar",
+    "num_roteadores": 2,
     "router_name": "Cisco AIR-AP-2802I-Z-K9-BR",
-    "noise_factor": 0.05
+    "max_workers": 2,
+    "noise_factor": 0.05,
+    "avg_rssi_weight": 0.3,
+    "coverage_weight": 0.7
 }
 ```
 
@@ -141,16 +153,24 @@ The simulator generates coverage images, highlighting signal intensity at each p
 
 ## ⚙️ Main Parameters
 
-| Parameter           | Description                                         | Example/Default      |
-|---------------------|-----------------------------------------------------|----------------------|
-| rssi_threshold      | Minimum RSSI to consider coverage                   | -70                  |
-| tx_power            | Router transmit power (dBm)                         | 23                   |
-| freq_mhz            | Wi-Fi frequency (MHz)                               | 2400                 |
-| distance_conversion | Conversion factor from graph unit to meters         | 0.5                  |
-| max_iter            | Number of optimization iterations                   | 20                   |
-| num_roteadores      | Number of routers to place                          | 1                    |
-| plot_save_path      | Folder to save results and images                   | C:\\Path\\to\\save   |
-| noise_factor        | Noise factor for ToA simulation                     | 0.05                 |
+| Parameter                | Description                                         |
+|--------------------------|-----------------------------------------------------|
+| rssi_threshold           | Minimum RSSI to consider coverage                   |
+| tx_power                 | Router transmit power (dBm)                         |
+| freq_mhz                 | Wi-Fi frequency (MHz)                               |
+| scale_factor             | Scale factor for visualization                      |
+| distance_conversion      | Conversion factor from graph unit to meters         |
+| max_iter                 | Number of optimization iterations                   |
+| top_n                    | Number of best solutions saved                      |
+| weight_colors            | Edge weight colors                                  |
+| plot_save_path           | Folder to save results and images                   |
+| precomputation_save_path | Folder to save precomputed data                     |
+| num_roteadores           | Number of routers to place                          |
+| router_name              | Router name/model                                   |
+| max_workers              | Maximum number of parallel threads/processes        |
+| noise_factor             | Noise factor for ToA simulation                     |
+| avg_rssi_weight          | Weight of average RSSI in objective function        |
+| coverage_weight          | Weight of coverage in objective function            |
 
 All parameters can be adjusted in `config.json`.
 
@@ -214,8 +234,8 @@ To speed up simulations on large graphs, you can precompute all pairs of **Time 
     "freq_mhz": 2400,
     "scale_factor": 2,
     "distance_conversion": 0.5,
-    "max_iter": 20,
-    "top_n": 10,
+    "max_iter": 500,
+    "top_n": 5,
     "weight_colors": {
         "16.67": "blue",
         "7": "red",
@@ -224,9 +244,13 @@ To speed up simulations on large graphs, you can precompute all pairs of **Time 
         "1": "gray"
     },
     "plot_save_path": "C:\\Path\\to\\save",
-    "num_roteadores": 1,
+    "precomputation_save_path": "C:\\Path\\to\\save",
+    "num_roteadores": 2,
     "router_name": "Cisco AIR-AP-2802I-Z-K9-BR",
-    "noise_factor": 0.05
+    "max_workers": 2,
+    "noise_factor": 0.05,
+    "avg_rssi_weight": 0.3,
+    "coverage_weight": 0.7
 }
 ```
 
