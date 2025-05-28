@@ -1,4 +1,0 @@
-=== Solução #4 ===
-Posições: [(48, 19), (85, 21)]
-Cobertura: 69.3%
-RSSI médio: -60.9 dBm
