@@ -7,17 +7,20 @@ import time
 import tkinter as tk
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tkinter import filedialog
-
 import networkx as nx
+import h5py
+import numpy as np
 
 def process_toa_aoa_chunk(
     src_nodes,
     target_nodes,
     G_data,
     distance_conversion,
-    noise_factor
+    noise_factor,
+    hdf5_path=None
 ):
-    """Processa um chunk de nós para calcular dados ToA (Time of Arrival) e AoA (Angle of Arrival)."""
+    """Processa um chunk de nós para calcular dados ToA (Time of Arrival) e AoA (Angle of Arrival).
+    Se hdf5_path for fornecido, salva diretamente no arquivo HDF5."""
     import networkx as nx
     import numpy as np
 
@@ -98,6 +101,18 @@ def process_toa_aoa_chunk(
             aoa = (aoa + aoa_noise) % 360
             aoa_results[(src, tgt)] = aoa
 
+    if hdf5_path is not None:
+        with h5py.File(hdf5_path, "a", libver="latest") as f:
+            f.swmr_mode = True
+            toa_grp = f.require_group("toa")
+            aoa_grp = f.require_group("aoa")
+            for k, v in toa_results.items():
+                key = f"{k[0]}|{k[1]}"
+                toa_grp.attrs[key] = v
+            for k, v in aoa_results.items():
+                key = f"{k[0]}|{k[1]}"
+                aoa_grp.attrs[key] = v
+        return None, None
     return toa_results, aoa_results
 
 class PrecomputeAoAToA:
@@ -106,39 +121,58 @@ class PrecomputeAoAToA:
         self.optimizer = optimizer
 
     @staticmethod
-    def save_precomputed_data(toa_data, aoa_data, filename):
-        """Salva os dados pré-computados de ToA e AoA em arquivo compactado."""
-        logging.info(f"Salvando {len(toa_data)} pares de dados em {filename}")
-        toa_serializable = {str(k): v for k, v in toa_data.items()}
-        aoa_serializable = {str(k): v for k, v in aoa_data.items()}
-        data = {
-            'toa': toa_serializable,
-            'aoa': aoa_serializable,
-        }
-        with gzip.open(filename, 'wb') as f:
-            pickle.dump(data, f)
+    def save_precomputed_data_hdf5(toa_data, aoa_data, filename):
+        """Salva os dados ToA/AoA em formato HDF5."""
+        logging.info(f"Salvando {len(toa_data)} pares de dados em {filename} (HDF5)")
+        with h5py.File(filename, "w") as f:
+            toa_grp = f.create_group("toa")
+            aoa_grp = f.create_group("aoa")
+            for k, v in toa_data.items():
+                key = f"{k[0]}|{k[1]}"
+                toa_grp.attrs[key] = v
+            for k, v in aoa_data.items():
+                key = f"{k[0]}|{k[1]}"
+                aoa_grp.attrs[key] = v
         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
-        logging.info(f"Dados salvos. Tamanho do arquivo: {file_size_mb:.2f} MB")
+        logging.info(f"Dados HDF5 salvos. Tamanho do arquivo: {file_size_mb:.2f} MB")
         return filename
 
     @staticmethod
-    def load_precomputed_data(filename):
-        """Carrega dados pré-computados de ToA e AoA de um arquivo compactado."""
+    def load_precomputed_data_hdf5(filename, pairs=None):
+        """Carrega dados ToA/AoA de arquivo HDF5. Se pairs for fornecido, carrega apenas esses pares."""
         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
-        logging.info(f"Carregando dados pré-computados de {filename} ({file_size_mb:.2f} MB)")
+        logging.info(f"Carregando dados HDF5 de {filename} ({file_size_mb:.2f} MB)")
         start_time = time.time()
-        with gzip.open(filename, 'rb') as f:
-            data = pickle.load(f)
-        toa_data = {ast.literal_eval(k): v for k, v in data['toa'].items()}
-        aoa_data = {ast.literal_eval(k): v for k, v in data['aoa'].items()}
+        toa_data = {}
+        aoa_data = {}
+        with h5py.File(filename, "r") as f:
+            toa_grp = f["toa"]
+            aoa_grp = f["aoa"]
+            if pairs is None:
+                for key in toa_grp.attrs:
+                    src_str, tgt_str = key.split("|")
+                    src = ast.literal_eval(src_str)
+                    tgt = ast.literal_eval(tgt_str)
+                    toa_data[(src, tgt)] = toa_grp.attrs[key]
+                for key in aoa_grp.attrs:
+                    src_str, tgt_str = key.split("|")
+                    src = ast.literal_eval(src_str)
+                    tgt = ast.literal_eval(tgt_str)
+                    aoa_data[(src, tgt)] = aoa_grp.attrs[key]
+            else:
+                for src, tgt in pairs:
+                    key = f"{src}|{tgt}"
+                    if key in toa_grp.attrs:
+                        toa_data[(src, tgt)] = toa_grp.attrs[key]
+                    if key in aoa_grp.attrs:
+                        aoa_data[(src, tgt)] = aoa_grp.attrs[key]
         elapsed = time.time() - start_time
-        timestamp = data.get('timestamp', 'desconhecido')
-        logging.info(f"Dados carregados em {elapsed:.2f}s ({file_size_mb/elapsed:.2f} MB/s). "
-                     f"Total de {len(toa_data):,} pares. Data de criação: {timestamp}")
+        logging.info(f"Dados HDF5 carregados em {elapsed:.2f}s ({file_size_mb/elapsed:.2f} MB/s). Total de {len(toa_data):,} pares.")
         return toa_data, aoa_data
 
-    def precompute_toa_aoa_data(self, G, nodes, filename=None, chunks=None):
-        """Realiza a pré-computação paralela dos dados ToA e AoA para todos os pares de nós."""
+    def precompute_toa_aoa_data(self, G, nodes, filename=None, chunks=None, use_hdf5=True):
+        """Realiza a pré-computação paralela dos dados ToA e AoA para todos os pares de nós.
+        Se use_hdf5=True, salva em HDF5."""
         if chunks is None:
             chunks = min(os.cpu_count() or 4, 16)
         if filename is None:
@@ -147,7 +181,7 @@ class PrecomputeAoAToA:
                 graph_name = os.path.splitext(os.path.basename(graph_file))[0]
             else:
                 graph_name = f"grafo_{len(G.nodes())}nodes"
-            filename = os.path.join(self.optimizer.precomputation_save_path, f"{graph_name}_aoa_toa_pre-computacao.pkl.gz")
+            filename = os.path.join(self.optimizer.precomputation_save_path, f"{graph_name}_aoa_toa_pre-computacao.h5")
         total_nodes = len(nodes)
         total_pairs = total_nodes * (total_nodes - 1)
         logging.info(f"Iniciando pré-computação paralela para {total_pairs} pares com {chunks} workers")
@@ -156,11 +190,13 @@ class PrecomputeAoAToA:
         node_chunks = [nodes[i:i+chunk_size] for i in range(0, len(nodes), chunk_size)]
         chunks = len(node_chunks)
         G_data = nx.node_link_data(G, edges="links")
-        toa_data = {}
-        aoa_data = {}
         start_time = time.time()
         total_processed = 0
         last_percent = -1
+
+        with h5py.File(filename, "w") as f:
+            f.create_group("toa")
+            f.create_group("aoa")
         with ProcessPoolExecutor(max_workers=chunks) as executor:
             futures = []
             for i, src_chunk in enumerate(node_chunks):
@@ -171,16 +207,13 @@ class PrecomputeAoAToA:
                         nodes,
                         G_data,
                         self.optimizer.distance_conversion,
-                        self.optimizer.noise_factor
+                        self.optimizer.noise_factor,
+                        filename
                     )
                 )
             for i, future in enumerate(as_completed(futures), 1):
                 try:
-                    chunk_toa, chunk_aoa = future.result()
-                    chunk_size = len(chunk_toa)
-                    toa_data.update(chunk_toa)
-                    aoa_data.update(chunk_aoa)
-                    total_processed += chunk_size
+                    total_processed += len(node_chunks[i-1]) * len(nodes)
                     percent = int((total_processed / total_pairs) * 100)
                     if percent > last_percent and percent % 5 == 0:
                         logging.info(f"Progresso total: {percent}% concluído")
@@ -188,12 +221,12 @@ class PrecomputeAoAToA:
                 except Exception as e:
                     logging.error(f"Erro no processamento do chunk {i}: {e}", exc_info=True)
         total_time = time.time() - start_time
-        logging.info(f"Pré-computação concluída em {total_time/60:.2f} minutos. Total de {len(toa_data)} pares.")
-        saved_file = self.save_precomputed_data(toa_data, aoa_data, filename)
-        return toa_data, aoa_data, saved_file
+        logging.info(f"Pré-computação HDF5 concluída em {total_time/60:.2f} minutos.")
+        return None, None, filename
 
-    def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False):
-        """Gera ou carrega dados ToA/AoA, utilizando pré-computação se disponível."""
+    def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False, prefer_hdf5=True):
+        """Gera ou carrega dados ToA/AoA, utilizando pré-computação se disponível.
+        Se prefer_hdf5=True, usa HDF5 se possível."""
         if noise_factor is None:
             noise_factor = self.optimizer.noise_factor
         if use_precomputed and not precomputed_file:
@@ -203,15 +236,15 @@ class PrecomputeAoAToA:
             try:
                 precomputed_file = filedialog.askopenfilename(
                     title="Selecione o arquivo de dados pré-computados",
-                    filetypes=[("Dados ToA/AoA", "*.pkl.gz"), ("Todos os arquivos", "*.*")],
+                    filetypes=[("Dados ToA/AoA", "*.h5"), ("Todos os arquivos", "*.*")],
                     initialdir=self.optimizer.precomputation_save_path
                 )
             finally:
                 root.destroy()
         if use_precomputed and precomputed_file and os.path.exists(precomputed_file) and not force_precompute:
             try:
-                toa_data, aoa_data = self.load_precomputed_data(precomputed_file)
-                logging.info(f"Usando dados pré-computados: {len(toa_data)} pares")
+                toa_data, aoa_data = self.load_precomputed_data_hdf5(precomputed_file)
+                logging.info(f"Usando dados pré-computados: {len(toa_data) if toa_data else 'HDF5'} pares")
                 return toa_data, aoa_data
             except Exception as e:
                 logging.warning(f"Erro ao carregar dados pré-computados: {e}")
