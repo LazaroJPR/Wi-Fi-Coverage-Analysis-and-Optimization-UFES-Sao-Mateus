@@ -193,7 +193,7 @@ class RouterOptimizerAoAToA:
     def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False):
         """Gera dados de ToA e AoA com opção de usar/gerar dados pré-computados."""
         return self.precompute_helper.generate_toa_aoa_data(
-            G, nodes, noise_factor, use_precomputed, precomputed_file, force_precompute
+            G, nodes, noise_factor, use_precomputed, precomputed_file, force_precompute, prefer_hdf5=True
         )
     
     def interactive_router_placement(self, G, num_roteadores_default):

@@ -75,16 +75,13 @@ def iteration_task(
     no_improve_count=None,
     adapt_threshold=10,
     avg_rssi_weight=0.3,
-    coverage_weight=0.7,
-    precomputed_hdf5=None
+    coverage_weight=0.7
 ):
     """Executa uma iteração de busca de roteadores em paralelo."""
     import numpy as np
     import networkx as nx
     import logging
     import random
-    import h5py
-    import ast
 
     # Reconstrói o grafo a partir dos dados serializados
     G = nx.node_link_graph(G_data, edges="links")
@@ -161,6 +158,7 @@ def iteration_task(
         len(local_candidate_nodes), size=num_roteadores, replace=False)
     combo = [local_candidate_nodes[i] for i in selected_indices]
 
+    # Se temos soluções elite e não estamos na fase de exploração, às vezes usamos uma combinação de posições elite
     if elite_positions and not exploration_phase and random.random() < 0.3 and len(elite_positions) > 0:
         available_elite = elite_positions.copy()
         if len(available_elite) >= num_roteadores:
@@ -168,25 +166,6 @@ def iteration_task(
         else:
             combo = available_elite + [local_candidate_nodes[i] for i in np.random.choice(
                 len(local_candidate_nodes), size=num_roteadores-len(available_elite), replace=False)]
-
-    # Leitura sob demanda do HDF5
-    if precomputed_hdf5:
-        node_list = list(G.nodes())
-        pairs_toa = [(node, router) for node in node_list for router in combo if node != router]
-        pairs_aoa = [(router, node) for node in node_list for router in combo if node != router]
-        toa_data = {}
-        aoa_data = {}
-        with h5py.File(precomputed_hdf5, "r") as f:
-            toa_grp = f["toa"]
-            aoa_grp = f["aoa"]
-            for node, router in pairs_toa:
-                key = f"{node}|{router}"
-                if key in toa_grp.attrs:
-                    toa_data[(node, router)] = toa_grp.attrs[key]
-            for router, node in pairs_aoa:
-                key = f"{router}|{node}"
-                if key in aoa_grp.attrs:
-                    aoa_data[(router, node)] = aoa_grp.attrs[key]
 
     # Centraliza o cálculo de RSSI e penalidade usando métodos estáticos
     rssi_values = RouterOptimizerAoAToA.compute_rssi_for_nodes_static(
@@ -409,7 +388,7 @@ class RouterOptimizerAoAToA:
     def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False):
         """Gera dados de ToA e AoA com opção de usar/gerar dados pré-computados."""
         return self.precompute_helper.generate_toa_aoa_data(
-            G, nodes, noise_factor, use_precomputed, precomputed_file, force_precompute
+            G, nodes, noise_factor, use_precomputed, precomputed_file, force_precompute, prefer_hdf5=True
         )
     
     @staticmethod
@@ -437,16 +416,6 @@ class RouterOptimizerAoAToA:
             self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
         else:
             logging.info("Usando dados ToA/AoA pré-existentes/pré-calculados.")
-
-        # Detecta se está usando HDF5
-        use_hdf5 = False
-        precomputed_file = None
-        if hasattr(self.precompute_helper, "last_hdf5_file"):
-            precomputed_file = self.precompute_helper.last_hdf5_file
-        elif hasattr(self, "toa_data") and self.toa_data is None and hasattr(self, "aoa_data") and self.aoa_data is None:
-            use_hdf5 = True
-        elif isinstance(self.toa_data, dict) and len(self.toa_data) == 0 and hasattr(self, "aoa_data") and isinstance(self.aoa_data, dict) and len(self.aoa_data) == 0:
-            use_hdf5 = True
 
         # Seleção de nós candidatos
         centralidade = nx.degree_centrality(G)
@@ -480,9 +449,6 @@ class RouterOptimizerAoAToA:
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             futures = []
             for iteration in range(total_iterations):
-                extra_kwargs = {}
-                if use_hdf5 and precomputed_file:
-                    extra_kwargs['precomputed_hdf5'] = precomputed_file
                 futures.append(
                     executor.submit(
                         iteration_task,
@@ -500,8 +466,7 @@ class RouterOptimizerAoAToA:
                         elite_positions=self.solution_memory.get_elite_positions(),
                         no_improve_count=no_improve_count,
                         avg_rssi_weight=self.avg_rssi_weight,
-                        coverage_weight=self.coverage_weight,
-                        **extra_kwargs
+                        coverage_weight=self.coverage_weight
                     )
                 )
             for idx, future in enumerate(as_completed(futures), 1):
@@ -580,7 +545,7 @@ class RouterOptimizerAoAToA:
             f.write(f"RSSI médio: {solution['avg_rssi']:.1f} dBm\n")
     
         return folder_name
-    
+
     def run_optimization(self):
         """Executa o processo de otimização para a quantidade de roteadores definida no config."""
         logging.info("Iniciando processo de otimização de roteadores.")
@@ -590,6 +555,7 @@ class RouterOptimizerAoAToA:
 
         nodes = list(G.nodes())
         if not self.toa_data:
+            # Ao gerar, irá pedir/preferir arquivo .h5 e usar o método correto
             self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
 
         num_roteadores = getattr(self, "num_roteadores", None)
@@ -630,6 +596,7 @@ class RouterOptimizerAoAToA:
                 shutil.rmtree(folder_name)
 
         logging.info(f"Resultados compactados em {zip_filename} para {num_roteadores} roteadores.")
+    
 
 if __name__ == "__main__":
     optimizer = RouterOptimizerAoAToA()

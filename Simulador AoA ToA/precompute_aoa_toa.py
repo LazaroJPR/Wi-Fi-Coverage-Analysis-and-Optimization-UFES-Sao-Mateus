@@ -17,10 +17,8 @@ def process_toa_aoa_chunk(
     G_data,
     distance_conversion,
     noise_factor,
-    hdf5_path=None
 ):
-    """Processa um chunk de nós para calcular dados ToA (Time of Arrival) e AoA (Angle of Arrival).
-    Se hdf5_path for fornecido, salva diretamente no arquivo HDF5."""
+    """Processa um chunk de nós para calcular dados ToA (Time of Arrival) e AoA (Angle of Arrival)."""
     import networkx as nx
     import numpy as np
 
@@ -101,18 +99,6 @@ def process_toa_aoa_chunk(
             aoa = (aoa + aoa_noise) % 360
             aoa_results[(src, tgt)] = aoa
 
-    if hdf5_path is not None:
-        with h5py.File(hdf5_path, "a", libver="latest") as f:
-            f.swmr_mode = True
-            toa_grp = f.require_group("toa")
-            aoa_grp = f.require_group("aoa")
-            for k, v in toa_results.items():
-                key = f"{k[0]}|{k[1]}"
-                toa_grp.attrs[key] = v
-            for k, v in aoa_results.items():
-                key = f"{k[0]}|{k[1]}"
-                aoa_grp.attrs[key] = v
-        return None, None
     return toa_results, aoa_results
 
 class PrecomputeAoAToA:
@@ -122,57 +108,64 @@ class PrecomputeAoAToA:
 
     @staticmethod
     def save_precomputed_data_hdf5(toa_data, aoa_data, filename):
-        """Salva os dados ToA/AoA em formato HDF5."""
+        """Salva os dados ToA/AoA em formato HDF5 usando datasets (não atributos)."""
         logging.info(f"Salvando {len(toa_data)} pares de dados em {filename} (HDF5)")
+        toa_keys = np.array([str(k) for k in toa_data.keys()], dtype='S100')
+        toa_values = np.array(list(toa_data.values()), dtype='float64')
+        aoa_keys = np.array([str(k) for k in aoa_data.keys()], dtype='S100')
+        aoa_values = np.array(list(aoa_data.values()), dtype='float64')
         with h5py.File(filename, "w") as f:
             toa_grp = f.create_group("toa")
             aoa_grp = f.create_group("aoa")
-            for k, v in toa_data.items():
-                key = f"{k[0]}|{k[1]}"
-                toa_grp.attrs[key] = v
-            for k, v in aoa_data.items():
-                key = f"{k[0]}|{k[1]}"
-                aoa_grp.attrs[key] = v
+            toa_grp.create_dataset('keys', data=toa_keys)
+            toa_grp.create_dataset('values', data=toa_values)
+            aoa_grp.create_dataset('keys', data=aoa_keys)
+            aoa_grp.create_dataset('values', data=aoa_values)
         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
         logging.info(f"Dados HDF5 salvos. Tamanho do arquivo: {file_size_mb:.2f} MB")
         return filename
 
     @staticmethod
     def load_precomputed_data_hdf5(filename, pairs=None):
-        """Carrega dados ToA/AoA de arquivo HDF5. Se pairs for fornecido, carrega apenas esses pares."""
+        """Carrega dados ToA/AoA de arquivo HDF5 usando datasets."""
+        import ast
         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
         logging.info(f"Carregando dados HDF5 de {filename} ({file_size_mb:.2f} MB)")
         start_time = time.time()
         toa_data = {}
         aoa_data = {}
         with h5py.File(filename, "r") as f:
+            # Carrega ToA
             toa_grp = f["toa"]
+            toa_keys = toa_grp['keys'][:]
+            toa_values = toa_grp['values'][:]
+            toa_dict = dict(zip([k.decode() for k in toa_keys], toa_values))
+            # Carrega AoA
             aoa_grp = f["aoa"]
+            aoa_keys = aoa_grp['keys'][:]
+            aoa_values = aoa_grp['values'][:]
+            aoa_dict = dict(zip([k.decode() for k in aoa_keys], aoa_values))
             if pairs is None:
-                for key in toa_grp.attrs:
-                    src_str, tgt_str = key.split("|")
-                    src = ast.literal_eval(src_str)
-                    tgt = ast.literal_eval(tgt_str)
-                    toa_data[(src, tgt)] = toa_grp.attrs[key]
-                for key in aoa_grp.attrs:
-                    src_str, tgt_str = key.split("|")
-                    src = ast.literal_eval(src_str)
-                    tgt = ast.literal_eval(tgt_str)
-                    aoa_data[(src, tgt)] = aoa_grp.attrs[key]
+                # Reconstrói as tuplas de chave
+                for k, v in toa_dict.items():
+                    src_tgt = ast.literal_eval(k)
+                    toa_data[src_tgt] = v
+                for k, v in aoa_dict.items():
+                    src_tgt = ast.literal_eval(k)
+                    aoa_data[src_tgt] = v
             else:
                 for src, tgt in pairs:
-                    key = f"{src}|{tgt}"
-                    if key in toa_grp.attrs:
-                        toa_data[(src, tgt)] = toa_grp.attrs[key]
-                    if key in aoa_grp.attrs:
-                        aoa_data[(src, tgt)] = aoa_grp.attrs[key]
+                    key = str((src, tgt))
+                    if key in toa_dict:
+                        toa_data[(src, tgt)] = toa_dict[key]
+                    if key in aoa_dict:
+                        aoa_data[(src, tgt)] = aoa_dict[key]
         elapsed = time.time() - start_time
         logging.info(f"Dados HDF5 carregados em {elapsed:.2f}s ({file_size_mb/elapsed:.2f} MB/s). Total de {len(toa_data):,} pares.")
         return toa_data, aoa_data
 
     def precompute_toa_aoa_data(self, G, nodes, filename=None, chunks=None, use_hdf5=True):
-        """Realiza a pré-computação paralela dos dados ToA e AoA para todos os pares de nós.
-        Se use_hdf5=True, salva em HDF5."""
+        """Realiza a pré-computação paralela dos dados ToA e AoA para todos os pares de nós."""
         if chunks is None:
             chunks = min(os.cpu_count() or 4, 16)
         if filename is None:
@@ -194,9 +187,8 @@ class PrecomputeAoAToA:
         total_processed = 0
         last_percent = -1
 
-        with h5py.File(filename, "w") as f:
-            f.create_group("toa")
-            f.create_group("aoa")
+        all_toa = {}
+        all_aoa = {}
         with ProcessPoolExecutor(max_workers=chunks) as executor:
             futures = []
             for i, src_chunk in enumerate(node_chunks):
@@ -208,11 +200,15 @@ class PrecomputeAoAToA:
                         G_data,
                         self.optimizer.distance_conversion,
                         self.optimizer.noise_factor,
-                        filename
                     )
                 )
             for i, future in enumerate(as_completed(futures), 1):
                 try:
+                    toa_chunk, aoa_chunk = future.result()
+                    if toa_chunk:
+                        all_toa.update(toa_chunk)
+                    if aoa_chunk:
+                        all_aoa.update(aoa_chunk)
                     total_processed += len(node_chunks[i-1]) * len(nodes)
                     percent = int((total_processed / total_pairs) * 100)
                     if percent > last_percent and percent % 5 == 0:
@@ -220,16 +216,19 @@ class PrecomputeAoAToA:
                         last_percent = percent
                 except Exception as e:
                     logging.error(f"Erro no processamento do chunk {i}: {e}", exc_info=True)
+
+        self.save_precomputed_data_hdf5(all_toa, all_aoa, filename)
         total_time = time.time() - start_time
         logging.info(f"Pré-computação HDF5 concluída em {total_time/60:.2f} minutos.")
-        return None, None, filename
+        return all_toa, all_aoa, filename
 
     def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False, prefer_hdf5=True):
         """Gera ou carrega dados ToA/AoA, utilizando pré-computação se disponível.
         Se prefer_hdf5=True, usa HDF5 se possível."""
         if noise_factor is None:
             noise_factor = self.optimizer.noise_factor
-        if use_precomputed and not precomputed_file:
+
+        if use_precomputed and not precomputed_file and not force_precompute:
             root = tk.Tk()
             root.call('tk', 'scaling', 1.0)
             root.withdraw()
@@ -245,6 +244,7 @@ class PrecomputeAoAToA:
             try:
                 toa_data, aoa_data = self.load_precomputed_data_hdf5(precomputed_file)
                 logging.info(f"Usando dados pré-computados: {len(toa_data) if toa_data else 'HDF5'} pares")
+                self.last_hdf5_file = precomputed_file
                 return toa_data, aoa_data
             except Exception as e:
                 logging.warning(f"Erro ao carregar dados pré-computados: {e}")
@@ -257,4 +257,8 @@ class PrecomputeAoAToA:
             else:
                 logging.info(f"Arquivo selecionado '{precomputed_file}' não encontrado. Iniciando cálculo...")
         logging.info(f"Iniciando pré-computação para {len(nodes)*(len(nodes)-1)} pares...")
-        return self.precompute_toa_aoa_data(G, nodes)[0:2]
+        # Realiza a pré-computação e depois carrega os dados do HDF5
+        _, _, hdf5_file = self.precompute_toa_aoa_data(G, nodes)
+        self.last_hdf5_file = hdf5_file
+        toa_data, aoa_data = self.load_precomputed_data_hdf5(hdf5_file)
+        return toa_data, aoa_data
