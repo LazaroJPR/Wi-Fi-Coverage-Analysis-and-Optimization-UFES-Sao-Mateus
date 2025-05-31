@@ -108,7 +108,7 @@ class PrecomputeAoAToA:
 
     @staticmethod
     def save_precomputed_data_hdf5(toa_data, aoa_data, filename):
-        """Salva os dados ToA/AoA em formato HDF5 usando datasets (não atributos)."""
+        """Salva os dados ToA/AoA em formato HDF5 usando datasets (não atributos) e gera índice pickle."""
         logging.info(f"Salvando {len(toa_data)} pares de dados em {filename} (HDF5)")
         toa_keys = np.array([str(k) for k in toa_data.keys()], dtype='S100')
         toa_values = np.array(list(toa_data.values()), dtype='float64')
@@ -121,8 +121,15 @@ class PrecomputeAoAToA:
             toa_grp.create_dataset('values', data=toa_values)
             aoa_grp.create_dataset('keys', data=aoa_keys)
             aoa_grp.create_dataset('values', data=aoa_values)
+        # Salva o índice externo em pickle
+        idx_path = filename + ".pkl"
+        toa_index = {k.decode(): i for i, k in enumerate(toa_keys)}
+        aoa_index = {k.decode(): i for i, k in enumerate(aoa_keys)}
+        with open(idx_path, "wb") as f:
+            pickle.dump({"toa": toa_index, "aoa": aoa_index}, f, protocol=pickle.HIGHEST_PROTOCOL)
         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
         logging.info(f"Dados HDF5 salvos. Tamanho do arquivo: {file_size_mb:.2f} MB")
+        logging.info(f"Índice externo salvo em {idx_path} ({os.path.getsize(idx_path)/1024/1024:.2f} MB)")
         return filename
 
     @staticmethod
@@ -245,7 +252,7 @@ class PrecomputeAoAToA:
                 toa_data, aoa_data = self.load_precomputed_data_hdf5(precomputed_file)
                 logging.info(f"Usando dados pré-computados: {len(toa_data) if toa_data else 'HDF5'} pares")
                 self.last_hdf5_file = precomputed_file
-                return toa_data, aoa_data
+                return toa_data, aoa_data, precomputed_file
             except Exception as e:
                 logging.warning(f"Erro ao carregar dados pré-computados: {e}")
                 logging.info("Prosseguindo para pré-computação...")
@@ -261,4 +268,4 @@ class PrecomputeAoAToA:
         _, _, hdf5_file = self.precompute_toa_aoa_data(G, nodes)
         self.last_hdf5_file = hdf5_file
         toa_data, aoa_data = self.load_precomputed_data_hdf5(hdf5_file)
-        return toa_data, aoa_data
+        return toa_data, aoa_data, hdf5_file

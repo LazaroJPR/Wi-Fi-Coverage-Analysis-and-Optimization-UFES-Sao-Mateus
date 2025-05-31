@@ -56,6 +56,36 @@ def calc_aoa_influence(aoa, expected_angle, obstacle_loss=0):
     
     return attenuation
 
+def get_toa_aoa_from_hdf5(hdf5_file, pairs):
+    toa_data = {}
+    aoa_data = {}
+    import pickle
+    import threading
+    if not hasattr(get_toa_aoa_from_hdf5, "_index_cache"):
+        get_toa_aoa_from_hdf5._index_cache = {}
+        get_toa_aoa_from_hdf5._lock = threading.Lock()
+    idx_path = hdf5_file + ".pkl"
+    with get_toa_aoa_from_hdf5._lock:
+        if idx_path not in get_toa_aoa_from_hdf5._index_cache:
+            with open(idx_path, "rb") as f:
+                get_toa_aoa_from_hdf5._index_cache[idx_path] = pickle.load(f)
+    idx_dict = get_toa_aoa_from_hdf5._index_cache[idx_path]
+    toa_index = idx_dict["toa"]
+    aoa_index = idx_dict["aoa"]
+    import h5py
+    with h5py.File(hdf5_file, "r") as f:
+        toa_grp = f["toa"]
+        aoa_grp = f["aoa"]
+        for src, tgt in pairs:
+            key = str((src, tgt))
+            idx = toa_index.get(key)
+            if idx is not None:
+                toa_data[(src, tgt)] = toa_grp['values'][idx]
+            idx = aoa_index.get(key)
+            if idx is not None:
+                aoa_data[(src, tgt)] = aoa_grp['values'][idx]
+    return toa_data, aoa_data
+
 class RouterOptimizerAoAToA:
     def __init__(self):
         """Inicializa o otimizador de roteadores e carrega configurações."""
@@ -95,7 +125,7 @@ class RouterOptimizerAoAToA:
         logging.info("RouterOptimizerAoAToA inicializado com config.json.")
         self.toa_cache = {}
         self.aoa_data = {}
-        self.precompute_helper = PrecomputeAoAToA(self)  # Instancia a nova classe de precomputação
+        self.precompute_helper = PrecomputeAoAToA(self)
 
     def load_graph(self):
         """Carrega o grafo do usuário via diálogo Tkinter."""
@@ -170,10 +200,15 @@ class RouterOptimizerAoAToA:
         logging.debug("Calculando cobertura e RSSI médio usando ToA e AoA.")
         node_list = list(G.nodes())
 
-        if toa_data is None and not self.toa_data:
-            self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, node_list)
+        if isinstance(toa_data, str) and toa_data.endswith(".h5"):
+            pairs = []
+            for node in node_list:
+                for router in routers:
+                    if node != router:
+                        pairs.append((node, router))
+            toa_data, aoa_data = get_toa_aoa_from_hdf5(toa_data, pairs)
 
-        toa_data = toa_data or self.toa_data
+        toa_data = toa_data or getattr(self, 'toa_cache', {})
         aoa_data = aoa_data or getattr(self, 'aoa_data', {})
 
         with ThreadPoolExecutor() as executor:
@@ -186,7 +221,7 @@ class RouterOptimizerAoAToA:
         valid_rssi = rssi_values[rssi_values > -100]
         avg_rssi = np.mean(valid_rssi) if len(valid_rssi) > 0 else -100
         return coverage, avg_rssi, rssi_values
-    
+
     def precompute_toa_aoa_data(self, G, nodes, filename=None, chunks=None):
         return self.precompute_helper.precompute_toa_aoa_data(G, nodes, filename, chunks)
 
@@ -207,7 +242,12 @@ class RouterOptimizerAoAToA:
         routers = [nodes[i] for i in np.linspace(0, len(nodes)-1, num_roteadores, dtype=int)]
 
         if not self.toa_cache:
-            self.toa_cache, self.aoa_data = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
+            result = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
+            if isinstance(result, tuple) and len(result) == 3 and isinstance(result[2], str) and result[2].endswith(".h5"):
+                self.toa_cache = result[2]
+                self.aoa_data = None
+            else:
+                self.toa_cache, self.aoa_data = result
 
         fig = plt.figure(figsize=(16, 12))
         fig.subplots_adjust(top=0.85, bottom=0.25)
