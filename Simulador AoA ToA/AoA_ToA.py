@@ -69,8 +69,7 @@ def iteration_task(
     tx_power,
     freq_mhz,
     distance_conversion,
-    toa_data,
-    aoa_data=None,
+    toa_hdf5_file,
     elite_positions=None,
     no_improve_count=None,
     adapt_threshold=10,
@@ -82,6 +81,8 @@ def iteration_task(
     import networkx as nx
     import logging
     import random
+    import h5py
+    import ast
 
     # Reconstrói o grafo a partir dos dados serializados
     G = nx.node_link_graph(G_data, edges="links")
@@ -167,7 +168,46 @@ def iteration_task(
             combo = available_elite + [local_candidate_nodes[i] for i in np.random.choice(
                 len(local_candidate_nodes), size=num_roteadores-len(available_elite), replace=False)]
 
-    # Centraliza o cálculo de RSSI e penalidade usando métodos estáticos
+    # Função para ler ToA/AoA de arquivo HDF5 sob demanda
+    def get_toa_aoa_from_hdf5(hdf5_file, pairs):
+        toa_data = {}
+        aoa_data = {}
+        import pickle
+        import threading
+        if not hasattr(get_toa_aoa_from_hdf5, "_index_cache"):
+            get_toa_aoa_from_hdf5._index_cache = {}
+            get_toa_aoa_from_hdf5._lock = threading.Lock()
+        idx_path = hdf5_file + ".pkl"
+        with get_toa_aoa_from_hdf5._lock:
+            if idx_path not in get_toa_aoa_from_hdf5._index_cache:
+                with open(idx_path, "rb") as f:
+                    get_toa_aoa_from_hdf5._index_cache[idx_path] = pickle.load(f)
+        idx_dict = get_toa_aoa_from_hdf5._index_cache[idx_path]
+        toa_index = idx_dict["toa"]
+        aoa_index = idx_dict["aoa"]
+        import h5py
+        with h5py.File(hdf5_file, "r") as f:
+            toa_grp = f["toa"]
+            aoa_grp = f["aoa"]
+            for src, tgt in pairs:
+                key = str((src, tgt))
+                idx = toa_index.get(key)
+                if idx is not None:
+                    toa_data[(src, tgt)] = toa_grp['values'][idx]
+                idx = aoa_index.get(key)
+                if idx is not None:
+                    aoa_data[(src, tgt)] = aoa_grp['values'][idx]
+        return toa_data, aoa_data
+
+    # Lista de pares necessários para esta iteração
+    node_list = list(G.nodes())
+    pairs = []
+    for node in node_list:
+        for router in combo:
+            if node != router:
+                pairs.append((node, router))
+    toa_data, aoa_data = get_toa_aoa_from_hdf5(toa_hdf5_file, pairs)
+
     rssi_values = RouterOptimizerAoAToA.compute_rssi_for_nodes_static(
         G, combo, tx_power, freq_mhz, distance_conversion, toa_data, aoa_data,
         rssi_func=RouterOptimizerAoAToA.compute_rssi_for_node_static
@@ -388,7 +428,7 @@ class RouterOptimizerAoAToA:
     def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False):
         """Gera dados de ToA e AoA com opção de usar/gerar dados pré-computados."""
         return self.precompute_helper.generate_toa_aoa_data(
-            G, nodes, noise_factor, use_precomputed, precomputed_file, force_precompute
+            G, nodes, noise_factor, use_precomputed, precomputed_file, force_precompute, prefer_hdf5=True
         )
     
     @staticmethod
@@ -413,9 +453,10 @@ class RouterOptimizerAoAToA:
         # Inicializa toa_data e aoa_data se não estiverem pré-carregados
         if not self.toa_data or not hasattr(self, 'aoa_data') or not self.aoa_data:
             logging.info("Gerando dados ToA/AoA para a otimização.")
-            self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
+            self.toa_data, self.aoa_data, self.toa_hdf5_file = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
         else:
             logging.info("Usando dados ToA/AoA pré-existentes/pré-calculados.")
+            self.toa_hdf5_file = getattr(self.precompute_helper, 'last_hdf5_file', None)
 
         # Seleção de nós candidatos
         centralidade = nx.degree_centrality(G)
@@ -461,8 +502,7 @@ class RouterOptimizerAoAToA:
                         self.tx_power,
                         self.freq_mhz,
                         self.distance_conversion,
-                        self.toa_data,
-                        self.aoa_data,
+                        self.toa_hdf5_file,
                         elite_positions=self.solution_memory.get_elite_positions(),
                         no_improve_count=no_improve_count,
                         avg_rssi_weight=self.avg_rssi_weight,
@@ -555,7 +595,7 @@ class RouterOptimizerAoAToA:
 
         nodes = list(G.nodes())
         if not self.toa_data:
-            self.toa_data, self.aoa_data = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
+            self.toa_data, self.aoa_data, _ = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
 
         num_roteadores = getattr(self, "num_roteadores", None)
         if num_roteadores is None:
