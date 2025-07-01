@@ -3,7 +3,7 @@
 
 <h1>🧠 Conversão de Planta Baixa em Grafo Ponderado para Simulações de Navegação Wi-Fi</h1>
 
-Este módulo converte uma imagem de planta arquitetônica em um **grafo ponderado**, onde os nós representam pontos navegáveis e as arestas representam conexões ponderadas com base nos obstáculos detectados na imagem (paredes, portas, janelas, etc).
+Este software converte uma imagem de planta arquitetônica em um **grafo ponderado**, onde os nós representam pontos navegáveis e as arestas representam conexões ponderadas com base nos obstáculos detectados na imagem (paredes, portas, janelas, etc).
 
 ## 📌 Exemplo Visual
 
@@ -63,9 +63,9 @@ pip install opencv-python numpy networkx matplotlib
 ## 📦 Como usar
 
 1. Suba uma imagem da planta com as cores padronizadas.
-2. Execute o script `Jpeg2Graph.py` para processar a imagem, detectar os obstáculos e criar o grafo:
+2. Execute o script `PlantaGrid.py` para processar a imagem, detectar os obstáculos e criar o grafo:
    ```bash
-   python Jpeg2Graph.py
+   python PlantaGrid.py
    ```
    O caminho da imagem será solicitado por uma janela de seleção de arquivos.
 3. O grafo será renderizado sobre a imagem original com as arestas coloridas conforme o peso.
@@ -104,7 +104,7 @@ O arquivo `config.json` permite ajustar parâmetros do processamento, como o tam
 
 <h1>🧠 Floor Plan to Weighted Graph for Wi-Fi Navigation Simulations</h1>
 
-This module converts a **floor plan image** into a **weighted graph**, where nodes represent navigable points and edges represent weighted paths based on detected obstacles (walls, doors, windows, etc.).
+This software converts a **floor plan image** into a **weighted graph**, where nodes represent navigable points and edges represent weighted paths based on detected obstacles (walls, doors, windows, etc.).
 
 ## 📌 Visual Example
 
@@ -164,9 +164,9 @@ pip install opencv-python numpy networkx matplotlib
 ## 📦 How to Use
 
 1. Upload a standardized color-coded floor plan image.
-2. Run the `Jpeg2Graph.py` script to process the image, detect obstacles, and build the graph:
+2. Run the `PlantaGrid.py` script to process the image, detect obstacles, and build the graph:
    ```bash
-   python Jpeg2Graph.py
+   python PlantaGrid.py
    ```
    The image path will be requested via a file selection dialog.
 3. The graph is rendered over the original image with color-coded weighted edges.

@@ -1,3 +1,21 @@
+#-------------------------------------------------------------------------------
+# Nome do Software:  PlantaGrid
+# Versão: 1.0.0
+#
+# Autor: Lázaro José Pedrosa dos Reis
+#
+# Titular dos Direitos Autorais: Lázaro José Pedrosa dos Reis
+#
+# Data de Criação: 2025
+# Última Atualização: 01 de julho de 2025
+#
+# Descrição: Este software converte uma imagem de planta arquitetônica em um **grafo ponderado**, onde os nós representam pontos navegáveis e as arestas representam conexões ponderadas com base nos obstáculos detectados na imagem (paredes, portas, janelas, etc).
+#
+# Copyright (c) 2025 Lázaro José Pedrosa dos Reis.
+# Este software está licenciado sob a Licença MIT. Consulte o arquivo LICENSE.txt na raiz do projeto para os termos completos.
+# na raiz do projeto para os termos completos.
+#-------------------------------------------------------------------------------
+
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
