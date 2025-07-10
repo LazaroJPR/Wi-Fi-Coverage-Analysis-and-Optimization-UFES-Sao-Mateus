@@ -3,6 +3,7 @@ import networkx as nx
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import numpy as np
 from itertools import combinations
 from sklearn.cluster import KMeans
@@ -13,8 +14,6 @@ from tkinter import filedialog
 import logging
 import json
 from precompute_aoa_toa import PrecomputeAoAToA
-import zipfile
-import shutil
 import threading
 
 SPEED_OF_LIGHT = 3e8  # m/s
@@ -303,7 +302,7 @@ class RouterOptimizerAoAToA:
         self.weight_colors = {float(k): v for k, v in weight_colors_cfg.items()}
 
         self.plot_save_path = config.get("plot_save_path", ".")
-        self.precomputation_save_path = config.get("precomputation_save_path", self.plot_save_path)
+        self.precomputation_save_path = self.plot_save_path
         
         os.makedirs(self.plot_save_path, exist_ok=True)
         os.makedirs(self.precomputation_save_path, exist_ok=True)
@@ -444,19 +443,26 @@ class RouterOptimizerAoAToA:
         """Calcula penalização por roteadores muito próximos."""
         return RouterOptimizerAoAToA.router_distance_penalty_static(routers)
 
-    def find_best_routers(self, G, num_roteadores):
+    def find_best_routers(self, G, num_roteadores, cancel_event=None):
         """Encontra as melhores posições para os roteadores usando paralelismo."""
         logging.info(f"Iniciando busca pelas melhores posições para {num_roteadores} roteadores.")
         nodes = list(G.nodes())
         best_solutions = []
 
-        # Inicializa toa_data e aoa_data se não estiverem pré-carregados
+        if cancel_event and cancel_event.is_set():
+            logging.info("Busca cancelada pelo usuário.")
+            return best_solutions
+
         if not self.toa_data or not hasattr(self, 'aoa_data') or not self.aoa_data:
             logging.info("Gerando dados ToA/AoA para a otimização.")
             self.toa_data, self.aoa_data, self.toa_hdf5_file = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
         else:
             logging.info("Usando dados ToA/AoA pré-existentes/pré-calculados.")
             self.toa_hdf5_file = getattr(self.precompute_helper, 'last_hdf5_file', None)
+
+        if cancel_event and cancel_event.is_set():
+            logging.info("Busca cancelada pelo usuário.")
+            return best_solutions
 
         # Seleção de nós candidatos
         centralidade = nx.degree_centrality(G)
@@ -490,6 +496,10 @@ class RouterOptimizerAoAToA:
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             futures = []
             for iteration in range(total_iterations):
+                if cancel_event and cancel_event.is_set():
+                    logging.info("Busca cancelada pelo usuário durante as iterações.")
+                    break
+                    
                 futures.append(
                     executor.submit(
                         iteration_task,
@@ -510,6 +520,10 @@ class RouterOptimizerAoAToA:
                     )
                 )
             for idx, future in enumerate(as_completed(futures), 1):
+                if cancel_event and cancel_event.is_set():
+                    logging.info("Busca cancelada pelo usuário durante processamento dos resultados.")
+                    break
+                    
                 try:
                     solution = future.result()
                     self.solution_memory.add_solution(solution)
@@ -586,57 +600,316 @@ class RouterOptimizerAoAToA:
     
         return folder_name
 
-    def run_optimization(self):
+    def interactive_router_placement(self, G, num_roteadores_default, master=None, controls_callback=None):
+        """Permite movimentar roteadores interativamente e calcula cobertura/RSSI ao clicar em Calcular."""
+        is_standalone = master is None
+        if is_standalone:
+            matplotlib.use('TkAgg')
+            root = tk.Tk()
+            root.title("Simulador Interativo - AoA/ToA")
+            master = root
+        
+        nodes = list(G.nodes())
+        min_routers = 1
+        max_routers = min(10, len(nodes))
+        
+        routers = [nodes[i] for i in np.linspace(0, len(nodes)-1, num_roteadores_default, dtype=int)]
+        
+        fig = plt.figure(figsize=(12, 9))
+        canvas = FigureCanvasTkAgg(fig, master=master)
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        toolbar_frame = tk.Frame(master)
+        toolbar_frame.pack(side=tk.TOP, fill=tk.X)
+        toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+        toolbar.update()
+
+        ax = fig.add_subplot(111)
+        fig.subplots_adjust(top=0.85, bottom=0.1)
+        ax.set_aspect('equal')
+        
+        router_count_var = tk.IntVar(value=num_roteadores_default)
+        calc_button_ref = [None]
+
+        title_text = "Simulador Interativo - AoA/ToA"
+        subtitle_text = "Arraste os roteadores, ajuste a quantidade e clique em Calcular para ver a cobertura"
+
+        def get_node_radius_px():
+            trans = ax.transData.transform
+            node_pos_px = {n: trans((n[0]*self.scale_factor, n[1]*self.scale_factor)) for n in G.nodes()}
+            edge_lengths = [
+                np.linalg.norm(np.array(node_pos_px[u]) - np.array(node_pos_px[v]))
+                for u, v in G.edges()
+            ]
+            return 0.8 * min(edge_lengths) if edge_lengths else 10
+
+        def update_fonts(event=None):
+            w, h = fig.get_size_inches()*fig.dpi
+            base = min(w, h)
+            title_fontsize = max(16, base // 40)
+            subtitle_fontsize = max(12, base // 70)
+            label_fontsize = max(10, base // 90)
+
+            if hasattr(fig, '_main_title'):
+                fig._main_title.set_fontsize(title_fontsize)
+            if hasattr(fig, '_subtitle'):
+                fig._subtitle.set_fontsize(subtitle_fontsize)
+            if hasattr(fig, '_coverage_title') and fig._coverage_title is not None:
+                fig._coverage_title.set_fontsize(label_fontsize)
+            ax.title.set_fontsize(label_fontsize)
+
+            node_radius_px = get_node_radius_px()
+            node_size = np.pi * (node_radius_px ** 2)
+            nodes_plot.set_sizes([node_size] * len(G.nodes()))
+
+            if hasattr(fig, '_colorbar') and hasattr(fig._colorbar, 'set_label'):
+                fig._colorbar.set_label('RSSI (dBm)', fontsize=label_fontsize)
+            fig.canvas.draw_idle()
+
+        fig._main_title = fig.suptitle(title_text, fontsize=22, y=0.98, ha='center', fontweight='bold')
+        fig._subtitle = fig.text(0.5, 0.94, subtitle_text, fontsize=14, ha='center', va='top')
+        fig._coverage_title = None
+
+        ax.set_title("")
+
+        scale_factor = self.scale_factor
+        pos = {n: (n[0] * scale_factor, n[1] * scale_factor) for n in G.nodes()}
+        
+        edge_colors = [self.weight_colors.get(G[u][v].get('weight', 1), 'black') for u, v in G.edges()]
+        nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=1.2, alpha=0.6, ax=ax)
+        
+        node_radius_px = 10
+        node_size = np.pi * (node_radius_px ** 2)
+        nodes_plot = nx.draw_networkx_nodes(
+            G, pos, node_color='lightgray',
+            node_size=node_size, ax=ax, alpha=0
+        )
+        nodes_plot.set_zorder(1)
+        
+        router_scat = ax.scatter(
+            [r[0]*scale_factor for r in routers],
+            [r[1]*scale_factor for r in routers],
+            s=300, c='black', edgecolors='yellow', linewidths=2, picker=True
+        )
+        router_scat.set_zorder(2)
+        
+        dragged_idx = [None]
+        current_routers = routers.copy()
+
+        def update_router_scatter():
+            router_scat.set_offsets([[r[0]*scale_factor, r[1]*scale_factor] for r in current_routers])
+            fig.canvas.draw_idle()
+
+        def on_pick(event):
+            if event.artist == router_scat:
+                dragged_idx[0] = event.ind[0]
+        
+        def on_motion(event):
+            if dragged_idx[0] is not None and event.inaxes == ax and event.xdata and event.ydata:
+                x, y = event.xdata/scale_factor, event.ydata/scale_factor
+                current_routers[dragged_idx[0]] = min(nodes, key=lambda n: (n[0]-x)**2 + (n[1]-y)**2)
+                update_router_scatter()
+        
+        def on_release(event):
+            dragged_idx[0] = None
+
+        def calculate_coverage():
+            """Inicia o cálculo da cobertura em uma thread separada para não bloquear a GUI."""
+            if not calc_button_ref[0]:
+                return
+                
+            # Atualiza o botão para estado de loading
+            calc_button = calc_button_ref[0]
+            original_text = calc_button.cget('text')
+            calc_button.config(text="Calculando...", state='disabled')
+            if master.winfo_exists():
+                master.update_idletasks()
+
+            def calculation_thread():
+                try:
+                    # Usa os dados ToA/AoA já carregados
+                    coverage, avg_rssi, rssi_values = self.evaluate_coverage(G, current_routers, self.toa_data, getattr(self, 'aoa_data', {}))
+                    
+                    def update_gui():
+                        nodes_plot.set_array(rssi_values)
+                        nodes_plot.set_cmap('RdYlGn')
+                        nodes_plot.set_clim(-90, -30)
+                        nodes_plot.set_alpha(1.0)
+                        router_positions = ', '.join([str(tuple(int(x) for x in r)) for r in current_routers])
+                        
+                        if fig._coverage_title is not None:
+                            fig._coverage_title.remove()
+
+                        fig._coverage_title = fig.text(
+                            0.5, 0.89,
+                            f"Cobertura: {coverage:.1f}% | RSSI médio: {avg_rssi:.1f} dBm\n"
+                            f"Posições dos roteadores: {router_positions}",
+                            fontsize=max(10, min(fig.get_size_inches()*fig.dpi)//90),
+                            ha='center', va='top'
+                        )
+                        ax.set_title("")
+
+                        if not hasattr(fig, '_colorbar') or fig._colorbar is None:
+                            cax = fig.add_axes([0.92, 0.1, 0.015, 0.75])
+                            fig._colorbar = plt.colorbar(nodes_plot, cax=cax, label='RSSI (dBm)')
+                            fig._colorbar.set_label('RSSI (dBm)', fontsize=max(10, min(fig.get_size_inches()*fig.dpi)//90))
+                        else:
+                            fig._colorbar.update_normal(nodes_plot)
+                        
+                        if calc_button_ref[0]:
+                            calc_button_ref[0].config(text=original_text, state='normal')
+                        fig.canvas.draw_idle()
+
+                    if master.winfo_exists():
+                        master.after(0, update_gui)
+                        
+                except Exception as e:
+                    def show_error():
+                        if calc_button_ref[0]:
+                            calc_button_ref[0].config(text=original_text, state='normal')
+                        print(f"Erro no cálculo: {e}")
+                    
+                    if master.winfo_exists():
+                        master.after(0, show_error)
+
+            threading.Thread(target=calculation_thread, daemon=True).start()
+
+        def on_slider_change(val):
+            nonlocal current_routers
+            n = int(router_count_var.get())
+
+            if n == len(current_routers):
+                return
+            if n < len(current_routers):
+                current_routers = current_routers[:n]
+            else:
+                already = set(current_routers)
+                candidates = [nodes[i] for i in np.linspace(0, len(nodes)-1, n, dtype=int)]
+
+                for c in candidates:
+                    if c not in already and len(current_routers) < n:
+                        current_routers.append(c)
+
+                if len(current_routers) < n:
+                    for node in nodes:
+                        if node not in current_routers:
+                            current_routers.append(node)
+                        if len(current_routers) == n:
+                            break
+            update_router_scatter()
+
+            nodes_plot.set_array(np.full(len(nodes), np.nan))
+            nodes_plot.set_alpha(0)
+            ax.set_title("")
+            if fig._coverage_title is not None:
+                fig._coverage_title.remove()
+                fig._coverage_title = None
+            fig.canvas.draw_idle()
+
+        # Conecta os eventos do matplotlib
+        fig.canvas.mpl_connect('pick_event', on_pick)
+        fig.canvas.mpl_connect('motion_notify_event', on_motion)
+        fig.canvas.mpl_connect('button_release_event', on_release)
+        fig.canvas.mpl_connect('resize_event', update_fonts)
+        
+        # Callback para criar os controles na interface principal
+        if controls_callback:
+            controls_callback(
+                router_count_var, 
+                min_routers, 
+                max_routers, 
+                on_slider_change, 
+                calculate_coverage, 
+                calc_button_ref
+            )
+
+        update_fonts()
+
+        if is_standalone:
+            controls_frame = tk.Frame(master)
+            controls_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=5)
+            
+            slider_frame = tk.Frame(controls_frame)
+            slider_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            tk.Label(slider_frame, text="Qtd. Roteadores:", font=('Segoe UI', 10)).pack(side=tk.LEFT, padx=(0, 5))
+            router_slider = tk.Scale(slider_frame, from_=min_routers, to=max_routers, 
+                                    orient=tk.HORIZONTAL, variable=router_count_var, 
+                                    length=200, font=('Segoe UI', 9))
+            router_slider.pack(side=tk.LEFT, padx=(0, 20))
+            
+            calc_button = tk.Button(controls_frame, text="Calcular Cobertura", 
+                                   font=('Segoe UI', 10, 'bold'), 
+                                   bg='#007acc', fg='white', 
+                                   activebackground='#005a9e', 
+                                   relief='flat', padx=20, pady=5,
+                                   cursor='hand2')
+            calc_button.pack(side=tk.RIGHT, padx=(10, 0))
+            
+            calc_button_ref[0] = calc_button
+            calc_button.config(command=calculate_coverage)
+            router_slider.config(command=on_slider_change)
+            
+            master.mainloop()
+
+    def run_optimization(self, cancel_event=None):
         """Executa o processo de otimização para a quantidade de roteadores definida no config."""
+        matplotlib.use('Agg')
         logging.info("Iniciando processo de otimização de roteadores.")
         logging.info("=== OTIMIZAÇÃO DE ROTEADORES ===")
-        G = self.load_graph()
-        logging.info(f"Grafo carregado com {len(G.nodes())} nós")
+        
+        if hasattr(self, 'precompute_helper') and self.precompute_helper:
+            self.precompute_helper.cancel_event = cancel_event
+        
+        if cancel_event and cancel_event.is_set():
+            logging.info("Otimização cancelada pelo usuário.")
+            return
+            
+        try:
+            G = self.load_graph()
+        except RuntimeError:
+            logging.error("Otimização cancelada: nenhum grafo selecionado.")
+            return
+
+        if not G:
+            logging.error("Nenhum grafo foi carregado.")
+            return
+
+        if cancel_event and cancel_event.is_set():
+            logging.info("Otimização cancelada pelo usuário.")
+            return
 
         nodes = list(G.nodes())
+        logging.info(f"Grafo carregado: {len(nodes)} nós, {len(G.edges())} arestas")
+
+        self.toa_data, self.aoa_data, _ = self.generate_toa_aoa_data(G, nodes)
+
+        if cancel_event and cancel_event.is_set():
+            logging.info("Otimização cancelada pelo usuário.")
+            return
+
         if not self.toa_data:
-            self.toa_data, self.aoa_data, _ = self.generate_toa_aoa_data(G, nodes, use_precomputed=True)
+            logging.error("Erro ao gerar/carregar dados ToA/AoA")
+            return
 
-        num_roteadores = getattr(self, "num_roteadores", None)
-        if num_roteadores is None:
-            # Para compatibilidade, tenta ler do config.json se não estiver como atributo
-            config_path = os.path.join(os.path.dirname(__file__), "config.json")
-            if os.path.isfile(config_path):
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                num_roteadores = config.get("num_roteadores", 1)
-            else:
-                num_roteadores = 1
+        logging.info(f"Dados ToA/AoA carregados: {len(self.toa_data)} pares")
 
-        logging.info(f"=== Testando com {num_roteadores} roteadores ===")
-        logging.info(f"Roteador: {self.router_name}")
-        logging.info(f"Potência TX: {self.tx_power} dBm, Frequência: {self.freq_mhz/1000} GHz")
+        best_solutions = self.find_best_routers(G, self.num_roteadores, cancel_event)
 
-        logging.info(f"Otimização para {num_roteadores} roteadores iniciada.")
-        best_solutions = self.find_best_routers(G, num_roteadores)
+        if cancel_event and cancel_event.is_set():
+            logging.info("Otimização cancelada pelo usuário.")
+            return
 
-        # Salva o zip na pasta definida em plot_save_path
-        zip_filename = os.path.join(self.plot_save_path, f"melhores_solucoes_{num_roteadores}_roteadores.zip")
-        with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for idx, solution in enumerate(best_solutions, 1):
-                logging.info(f"--- Solução #{idx} ---")
-                logging.info(f"Posições: {solution['routers']}")
-                logging.info(f"Cobertura: {solution['coverage']:.1f}%")
-                logging.info(f"RSSI médio: {solution['avg_rssi']:.1f} dBm")
+        if not best_solutions:
+            logging.warning("Nenhuma solução encontrada")
+            return
 
-                folder_name = self.save_solution(solution, idx, G)
-                
-                for file in os.listdir(folder_name):
-                    zipf.write(
-                        os.path.join(folder_name, file),
-                        os.path.join(f'solucao_{idx}', file)
-                    )
-                
-                shutil.rmtree(folder_name)
+        logging.info(f"Encontradas {len(best_solutions)} soluções")
 
-        logging.info(f"Resultados compactados em {zip_filename} para {num_roteadores} roteadores.")
-    
+        for i, solution in enumerate(best_solutions[:self.top_n], 1):
+            if cancel_event and cancel_event.is_set():
+                logging.info("Otimização cancelada pelo usuário.")
+                return
+            self.save_solution(solution, i, G)
 
-if __name__ == "__main__":
-    optimizer = RouterOptimizerAoAToA()
-    optimizer.run_optimization()
+        logging.info("=== OTIMIZAÇÃO CONCLUÍDA ===")

@@ -1,5 +1,3 @@
-import ast
-import gzip
 import logging
 import os
 import pickle
@@ -105,6 +103,8 @@ class PrecomputeAoAToA:
     def __init__(self, optimizer):
         """Inicializa a classe de pré-computação ToA/AoA."""
         self.optimizer = optimizer
+        self.status_callback = None
+        self.cancel_event = None
 
     @staticmethod
     def save_precomputed_data_hdf5(toa_data, aoa_data, filename):
@@ -182,10 +182,16 @@ class PrecomputeAoAToA:
             else:
                 graph_name = f"grafo_{len(G.nodes())}nodes"
             filename = os.path.join(self.optimizer.precomputation_save_path, f"{graph_name}_aoa_toa_pre-computacao.h5")
+        
         total_nodes = len(nodes)
         total_pairs = total_nodes * (total_nodes - 1)
+        
+        if self.status_callback:
+            self.status_callback(f"Iniciando pré-computação para {total_pairs:,} pares...")
+        
         logging.info(f"Iniciando pré-computação paralela para {total_pairs} pares com {chunks} workers")
         logging.info(f"Os resultados serão salvos em: {filename}")
+        
         chunk_size = max(1, len(nodes) // chunks)
         node_chunks = [nodes[i:i+chunk_size] for i in range(0, len(nodes), chunk_size)]
         chunks = len(node_chunks)
@@ -196,6 +202,10 @@ class PrecomputeAoAToA:
 
         all_toa = {}
         all_aoa = {}
+        
+        if self.status_callback:
+            self.status_callback("Processando chunks de dados...")
+        
         with ProcessPoolExecutor(max_workers=chunks) as executor:
             futures = []
             for i, src_chunk in enumerate(node_chunks):
@@ -210,6 +220,11 @@ class PrecomputeAoAToA:
                     )
                 )
             for i, future in enumerate(as_completed(futures), 1):
+                if self.cancel_event and self.cancel_event.is_set():
+                    if self.status_callback:
+                        self.status_callback("Pré-computação cancelada...")
+                    raise RuntimeError("Pré-computação cancelada pelo usuário")
+                
                 try:
                     toa_chunk, aoa_chunk = future.result()
                     if toa_chunk:
@@ -219,14 +234,25 @@ class PrecomputeAoAToA:
                     total_processed += len(node_chunks[i-1]) * len(nodes)
                     percent = int((total_processed / total_pairs) * 100)
                     if percent > last_percent and percent % 5 == 0:
-                        logging.info(f"Progresso total: {percent}% concluído")
+                        status_msg = f"Progresso da pré-computação: {percent}% concluído"
+                        logging.info(status_msg)
+                        if self.status_callback:
+                            self.status_callback(status_msg)
                         last_percent = percent
                 except Exception as e:
                     logging.error(f"Erro no processamento do chunk {i}: {e}", exc_info=True)
 
+        if self.status_callback:
+            self.status_callback("Salvando dados pré-computados...")
+        
         self.save_precomputed_data_hdf5(all_toa, all_aoa, filename)
         total_time = time.time() - start_time
-        logging.info(f"Pré-computação HDF5 concluída em {total_time/60:.2f} minutos.")
+        
+        completion_msg = f"Pré-computação HDF5 concluída em {total_time/60:.2f} minutos."
+        logging.info(completion_msg)
+        if self.status_callback:
+            self.status_callback("Pré-computação concluída!")
+        
         return all_toa, all_aoa, filename
 
     def generate_toa_aoa_data(self, G, nodes, noise_factor=None, use_precomputed=True, precomputed_file=None, force_precompute=False, prefer_hdf5=True):
@@ -236,6 +262,9 @@ class PrecomputeAoAToA:
             noise_factor = self.optimizer.noise_factor
 
         if use_precomputed and not precomputed_file and not force_precompute:
+            if self.status_callback:
+                self.status_callback("Procurando dados pré-computados...")
+            
             root = tk.Tk()
             root.call('tk', 'scaling', 1.0)
             root.withdraw()
@@ -247,25 +276,47 @@ class PrecomputeAoAToA:
                 )
             finally:
                 root.destroy()
+                
         if use_precomputed and precomputed_file and os.path.exists(precomputed_file) and not force_precompute:
             try:
+                if self.status_callback:
+                    self.status_callback("Carregando dados pré-computados...")
+                
                 toa_data, aoa_data = self.load_precomputed_data_hdf5(precomputed_file)
                 logging.info(f"Usando dados pré-computados: {len(toa_data) if toa_data else 'HDF5'} pares")
                 self.last_hdf5_file = precomputed_file
+                
+                if self.status_callback:
+                    self.status_callback("Dados pré-computados carregados com sucesso!")
+                
                 return toa_data, aoa_data, precomputed_file
             except Exception as e:
                 logging.warning(f"Erro ao carregar dados pré-computados: {e}")
                 logging.info("Prosseguindo para pré-computação...")
+                if self.status_callback:
+                    self.status_callback("Erro ao carregar dados, iniciando nova pré-computação...")
         else:
             if force_precompute:
                 logging.info("Recomputação forçada iniciada...")
+                if self.status_callback:
+                    self.status_callback("Recomputação forçada iniciada...")
             elif not precomputed_file:
                 logging.info("Nenhum arquivo de pré-computação selecionado. Iniciando cálculo...")
+                if self.status_callback:
+                    self.status_callback("Nenhum arquivo selecionado, iniciando nova pré-computação...")
             else:
                 logging.info(f"Arquivo selecionado '{precomputed_file}' não encontrado. Iniciando cálculo...")
+                if self.status_callback:
+                    self.status_callback("Arquivo não encontrado, iniciando nova pré-computação...")
+        
         logging.info(f"Iniciando pré-computação para {len(nodes)*(len(nodes)-1)} pares...")
+        
         # Realiza a pré-computação e depois carrega os dados do HDF5
         _, _, hdf5_file = self.precompute_toa_aoa_data(G, nodes)
         self.last_hdf5_file = hdf5_file
+        
+        if self.status_callback:
+            self.status_callback("Carregando dados recém-computados...")
+        
         toa_data, aoa_data = self.load_precomputed_data_hdf5(hdf5_file)
         return toa_data, aoa_data, hdf5_file

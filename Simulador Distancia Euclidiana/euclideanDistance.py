@@ -795,11 +795,4 @@ class RouterOptimizer:
 
 if __name__ == "__main__":
     optimizer = RouterOptimizer()
-    
-    # Para executar o modo interativo de forma independente:
-    # G = optimizer.load_graph()
-    # if G:
-    #     optimizer.interactive_router_placement(G, optimizer.num_roteadores)
-
-    # Para executar a otimização em lote:
     optimizer.run_optimization()
