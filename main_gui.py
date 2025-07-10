@@ -269,8 +269,6 @@ class MainApp(tk.Tk):
         self.after(100, self.poll_log_queue)
 
     def run_simulation(self, target_func, on_finish=None):
-        self.notebook.select(self.log_tab)
-        
         def wrapped_target():
             target_func()
             if on_finish:
@@ -289,22 +287,88 @@ class MainApp(tk.Tk):
 
     def run_batch_simulation(self):
         try:
-            # Salva as configurações antes de executar
             config_dict = self.get_config_dict()
             self.save_config_to_file(config_dict, self.sim_type.get())
+            
+            # Oculta os controles interativos
+            self.interactive_controls_frame.pack_forget()
+            self.calc_coverage_button.config(state="disabled")
+            
+            # Cria a interface de loading para a simulação em lote
+            if self.interactive_canvas_container:
+                self.interactive_canvas_container.destroy()
+            self.interactive_canvas_container = ttk.Frame(self.view_frame)
+            self.interactive_canvas_container.pack(expand=True, fill="both")
             
             self.batch_button.config(state="disabled")
             self.interactive_button.config(state="disabled")
             self.cancel_button.config(state="normal")
             self.cancel_event.clear()
 
+            # Frame de loading com componentes visuais
+            loading_frame = ttk.Frame(self.interactive_canvas_container)
+            loading_frame.pack(expand=True, fill="both")
+            
+            # Label principal de loading
+            loading_label = ttk.Label(loading_frame, text="Executando Otimização de Roteadores...", font=("Helvetica", 16, "bold"))
+            loading_label.pack(pady=(100, 20))
+            
+            # Label de status específico (mostra a última linha do log)
+            status_label = ttk.Label(loading_frame, text="Preparando simulação...", font=("Helvetica", 12))
+            status_label.pack(pady=10)
+            
+            # Barra de progresso
+            progress_bar = ttk.Progressbar(loading_frame, mode='indeterminate')
+            progress_bar.pack(pady=20)
+            progress_bar.start()
+            
+            self.update_idletasks()
+
+            def update_batch_status(message):
+                """Atualiza o status da simulação em lote na thread principal"""
+                def update():
+                    if status_label.winfo_exists():
+                        status_label.config(text=message)
+                        self.update_idletasks()
+                self.after(0, update)
+
+            # Define o callback de status para esta simulação
+            self.status_update_callback = update_batch_status
+
+            def on_batch_finish():
+                """Finaliza a interface de loading da simulação em lote"""
+                try:
+                    progress_bar.stop()
+                    loading_frame.destroy()
+                    
+                    # Limpa o callback de status
+                    self.status_update_callback = None
+                    
+                    # Mostra mensagem de conclusão
+                    success_label = ttk.Label(self.interactive_canvas_container, 
+                                            text="✓ Otimização concluída com sucesso!", 
+                                            font=("Helvetica", 14, "bold"), foreground="green")
+                    success_label.pack(pady=50)
+                    
+                    # Adiciona um botão para visualizar os logs
+                    view_logs_button = ttk.Button(self.interactive_canvas_container, 
+                                                text="Visualizar Logs Completos", 
+                                                command=lambda: self.notebook.select(self.log_tab))
+                    view_logs_button.pack(pady=10)
+                    
+                except:
+                    pass  # Evita erros se o widget foi destruído
+                
+                # Chama o método original de finalização
+                self.on_simulation_finish()
+
             sim_type = self.sim_type.get()
             if sim_type == "euclidean":
                 optimizer = EuclideanOptimizer()
-                self.run_simulation(lambda: optimizer.run_optimization(cancel_event=self.cancel_event), on_finish=self.on_simulation_finish)
+                self.run_simulation(lambda: optimizer.run_optimization(cancel_event=self.cancel_event), on_finish=on_batch_finish)
             elif sim_type == "aoa_toa":
                 optimizer = AoAOptimizer()
-                self.run_simulation(lambda: optimizer.run_optimization(cancel_event=self.cancel_event), on_finish=self.on_simulation_finish)
+                self.run_simulation(lambda: optimizer.run_optimization(cancel_event=self.cancel_event), on_finish=on_batch_finish)
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao salvar configurações: {str(e)}")
             self.batch_button.config(state="normal")
@@ -315,10 +379,21 @@ class MainApp(tk.Tk):
         logging.warning("Sinal de cancelamento enviado. Aguardando a simulação terminar...")
         self.cancel_button.config(state="disabled")
         
+        # Limpa o callback de status para parar atualizações
+        self.status_update_callback = None
+        
         # Se houver uma thread de simulação em lote ativa, aguarda ela terminar
         if self.simulation_thread and self.simulation_thread.is_alive():
-            # Para simulação em lote, apenas aguarda a thread terminar
-            pass
+            # Para simulação em lote, limpa a interface de loading
+            if self.interactive_canvas_container:
+                for widget in self.interactive_canvas_container.winfo_children():
+                    widget.destroy()
+                
+                # Mostra mensagem de cancelamento
+                cancel_label = ttk.Label(self.interactive_canvas_container, 
+                                       text="⚠ Simulação cancelada pelo usuário", 
+                                       font=("Helvetica", 14, "bold"), foreground="orange")
+                cancel_label.pack(pady=50)
         else:
             # Para simulação interativa, força atualização imediata da UI
             # A thread de setup verificará o cancel_event e encerrará adequadamente
@@ -567,7 +642,8 @@ class MainApp(tk.Tk):
         """Intercepta mensagens de log para atualizar o status de loading durante simulações."""
         if not self.status_update_callback:
             return
-            
+        
+        # Para simulação interativa, usa as mensagens específicas traduzidas
         status_messages = {
             "Solicitando arquivo de dados pré-computados": "Procurando dados pré-computados...",
             "Carregando dados pré-computados de": "Carregando dados pré-computados...",
@@ -591,17 +667,26 @@ class MainApp(tk.Tk):
             "Pré-computação e carregamento concluídos": "Dados prontos para uso!"
         }
         
-        # Procura por padrões no log e atualiza o status
+        # Verifica se é uma mensagem traduzida para simulação interativa
+        translated_message = None
         for pattern, status in status_messages.items():
             if pattern in log_message:
                 if callable(status):
-                    status_text = status(log_message)
+                    translated_message = status(log_message)
                 else:
-                    status_text = status
-                    
-                if status_text:
-                    self.status_update_callback(status_text)
+                    translated_message = status
                 break
+        
+        # Se encontrou uma tradução, usa ela; senão, usa a mensagem original do log
+        if translated_message:
+            self.status_update_callback(translated_message)
+        else:
+            # Para simulação em lote, mostra diretamente a última linha do log
+            # Remove o timestamp e nível do log para ficar mais limpo
+            import re
+            clean_message = re.sub(r'^\[.*?\]\s*\w+\s*-\s*', '', log_message)
+            if clean_message.strip():
+                self.status_update_callback(clean_message.strip())
     
     def _extract_progress_status(self, log_message):
         """Extrai informação de progresso dos logs de pré-computação."""
