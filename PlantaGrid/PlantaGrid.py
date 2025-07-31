@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from networkx import write_graphml
 import os
+import multiprocessing
 import tkinter as tk
 from tkinter import filedialog
 import json
@@ -315,4 +316,7 @@ def main():
     logging.info("Processamento finalizado")
 
 if __name__ == "__main__":
+    # Proteção crítica para multiprocessing em executáveis PyInstaller
+    multiprocessing.freeze_support()
+    
     main()
