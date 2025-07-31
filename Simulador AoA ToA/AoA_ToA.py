@@ -1,4 +1,5 @@
 import os
+import multiprocessing
 import networkx as nx
 import matplotlib
 matplotlib.use('TkAgg')
@@ -283,9 +284,9 @@ class RouterOptimizerAoAToA:
         self.freq_mhz = config.get("freq_mhz", 2400)
         self.scale_factor = config.get("scale_factor", 2)
         self.distance_conversion = config.get("distance_conversion", 0.5)
-        self.max_iter = config.get("max_iter", 20)
+        self.max_iter = config.get("max_iter", 500)
         self.top_n = config.get("top_n", 10)
-        self.num_roteadores = config.get("num_roteadores", 1)
+        self.num_roteadores = config.get("num_roteadores", 2)
         self.router_name = config.get("router_name", "Roteador")
         self.noise_factor = config.get("noise_factor", 0.05)
         self.max_workers = config.get("max_workers", os.cpu_count() or 2)

@@ -13,6 +13,7 @@ Características principais:
 - Processamento em threads separadas para não bloquear a UI
 """
 
+import multiprocessing
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import logging
@@ -21,12 +22,17 @@ import queue
 import os
 import sys
 import json
+import cv2
+import re
+from PIL import Image, ImageTk
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Simulador Distancia Euclidiana'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Simulador AoA ToA'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'PlantaGrid'))
 
 from euclideanDistance import RouterOptimizer as EuclideanOptimizer
 from AoA_ToA import RouterOptimizerAoAToA as AoAOptimizer
+from PlantaGrid import JpegToGraph
 
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue, status_update_callback=None):
@@ -46,6 +52,10 @@ class MainApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Simulador de Otimização de Roteadores")
+        
+        # Configurar ícones da aplicação
+        self.setup_icons()
+        
         self.state('zoomed')
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(pady=10, padx=10, expand=True, fill="both")
@@ -63,11 +73,44 @@ class MainApp(tk.Tk):
         self.simulation_thread = None
         self.cancel_event = threading.Event()
         
+        # Variáveis do PlantaGrid
+        self.plantagrid_cell_size_var = tk.StringVar()
+        self.plantagrid_concrete_weight_var = tk.StringVar()
+        self.plantagrid_window_weight_var = tk.StringVar()
+        self.plantagrid_door_weight_var = tk.StringVar()
+        self.plantagrid_mdf_weight_var = tk.StringVar()
+        self.plantagrid_save_path_var = tk.StringVar()
+        self.plantagrid_canvas_container = None
+        
         # Carrega configurações iniciais
         self.load_config_from_file(self.sim_type.get())
         
         # Configura estilos para as seções expansíveis
         self.setup_collapsible_styles()
+
+    def setup_icons(self):
+        """Configura os ícones da aplicação (janela e barra de tarefas)"""
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), "Logo.png")
+            
+            if os.path.exists(logo_path):
+                logo_image = Image.open(logo_path)
+                
+                window_icon = logo_image.resize((32, 32), Image.Resampling.LANCZOS)
+                self.window_icon_photo = ImageTk.PhotoImage(window_icon)
+                
+                taskbar_icon = logo_image.resize((16, 16), Image.Resampling.LANCZOS)
+                self.taskbar_icon_photo = ImageTk.PhotoImage(taskbar_icon)
+                
+                self.iconphoto(True, self.window_icon_photo, self.taskbar_icon_photo)
+                
+                logging.info("Ícones da aplicação carregados com sucesso")
+            else:
+                logging.warning(f"Arquivo de logo não encontrado: {logo_path}")
+                
+        except Exception as e:
+            logging.error(f"Erro ao carregar ícones da aplicação: {e}")
+            # Continua sem ícones se houver erro
 
     def create_main_tab_widgets(self):
         main_frame = ttk.Frame(self.main_tab, padding="10")
@@ -98,6 +141,14 @@ class MainApp(tk.Tk):
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas.find_all()[0], width=e.width) if canvas.find_all() else None)
         canvas.pack(side="left", fill="y", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+        # PlantaGrid
+        ttk.Label(scrollable_frame, text="PlantaGrid:", font=("Helvetica", 12, "bold")).pack(pady=(5, 10), anchor="w")
+        
+        self.plantagrid_button = ttk.Button(scrollable_frame, text="Converter Planta Arquitetônica", command=self.show_plantagrid_interface)
+        self.plantagrid_button.pack(pady=(0, 10), fill="x")
+
+        ttk.Separator(scrollable_frame, orient='horizontal').pack(fill='x', pady=15)
 
         # Tipo de simulação
         ttk.Label(scrollable_frame, text="Tipo de Simulação:", font=("Helvetica", 12, "bold")).pack(pady=(5, 10), anchor="w")
@@ -242,6 +293,21 @@ class MainApp(tk.Tk):
                 self.log_widget.see(tk.END)
         self.after(100, self.poll_log_queue)
 
+    def clear_interactive_view(self):
+        """Limpa a área de visualização interativa, removendo qualquer conteúdo anterior"""
+        if self.interactive_canvas_container:
+            self.interactive_canvas_container.destroy()
+            self.interactive_canvas_container = None
+        
+        # Também limpa o container do PlantaGrid se existir
+        if self.plantagrid_canvas_container:
+            self.plantagrid_canvas_container.destroy()
+            self.plantagrid_canvas_container = None
+        
+        # Esconde os controles interativos
+        self.interactive_controls_frame.pack_forget()
+        self.calc_coverage_button.config(state="disabled")
+
     def run_simulation(self, target_func, on_finish=None):
         def wrapped_target():
             target_func()
@@ -255,25 +321,26 @@ class MainApp(tk.Tk):
     def on_simulation_finish(self):
         self.batch_button.config(state="normal")
         self.interactive_button.config(state="normal")
+        self.plantagrid_button.config(state="normal")
         self.cancel_button.config(state="disabled")
         self.simulation_thread = None
         logging.info("Simulação concluída ou cancelada.")
 
     def run_batch_simulation(self):
         try:
+            # Limpa a área de visualização antes de iniciar
+            self.clear_interactive_view()
+            
             config_dict = self.get_config_dict()
             self.save_config_to_file(config_dict, self.sim_type.get())
-            self.interactive_controls_frame.pack_forget()
-            self.calc_coverage_button.config(state="disabled")
             
             # Cria a interface de loading para a simulação em lote
-            if self.interactive_canvas_container:
-                self.interactive_canvas_container.destroy()
             self.interactive_canvas_container = ttk.Frame(self.view_frame)
             self.interactive_canvas_container.pack(expand=True, fill="both")
             
             self.batch_button.config(state="disabled")
             self.interactive_button.config(state="disabled")
+            self.plantagrid_button.config(state="disabled")
             self.cancel_button.config(state="normal")
             self.cancel_event.clear()
 
@@ -328,9 +395,26 @@ class MainApp(tk.Tk):
             sim_type = self.sim_type.get()
             if sim_type == "euclidean":
                 optimizer = EuclideanOptimizer()
+                optimizer.num_roteadores = config_dict["num_roteadores"]
+                optimizer.max_iter = config_dict["max_iter"]
+                optimizer.max_workers = config_dict["max_workers"]
+                optimizer.tx_power = config_dict["tx_power"]
+                optimizer.freq_mhz = config_dict["freq_mhz"]
+                optimizer.router_name = config_dict["router_name"]
+                optimizer.plot_save_path = config_dict["plot_save_path"]
+                optimizer.weight_colors = {float(k): v for k, v in config_dict["weight_colors"].items()}
                 self.run_simulation(lambda: optimizer.run_optimization(cancel_event=self.cancel_event), on_finish=on_batch_finish)
             elif sim_type == "aoa_toa":
                 optimizer = AoAOptimizer()
+                optimizer.num_roteadores = config_dict["num_roteadores"]
+                optimizer.max_iter = config_dict["max_iter"]
+                optimizer.max_workers = config_dict["max_workers"]
+                optimizer.tx_power = config_dict["tx_power"]
+                optimizer.freq_mhz = config_dict["freq_mhz"]
+                optimizer.router_name = config_dict["router_name"]
+                optimizer.plot_save_path = config_dict["plot_save_path"]
+                optimizer.precomputation_save_path = config_dict["precomputation_save_path"]
+                optimizer.weight_colors = {float(k): v for k, v in config_dict["weight_colors"].items()}
                 self.run_simulation(lambda: optimizer.run_optimization(cancel_event=self.cancel_event), on_finish=on_batch_finish)
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao salvar configurações: {str(e)}")
@@ -358,16 +442,31 @@ class MainApp(tk.Tk):
 
     def run_interactive_simulation(self):
         try:
+            # Limpa a área de visualização antes de iniciar
+            self.clear_interactive_view()
+            
             config_dict = self.get_config_dict()
             self.save_config_to_file(config_dict, self.sim_type.get())
             
-            if self.interactive_canvas_container:
-                self.interactive_canvas_container.destroy()
             self.interactive_canvas_container = ttk.Frame(self.view_frame)
             self.interactive_canvas_container.pack(expand=True, fill="both")
 
             sim_type = self.sim_type.get()
             optimizer = EuclideanOptimizer() if sim_type == "euclidean" else AoAOptimizer()
+            
+            # Aplica os valores da interface diretamente no otimizador
+            optimizer.num_roteadores = config_dict["num_roteadores"]
+            optimizer.max_iter = config_dict["max_iter"]
+            optimizer.max_workers = config_dict["max_workers"]
+            optimizer.tx_power = config_dict["tx_power"]
+            optimizer.freq_mhz = config_dict["freq_mhz"]
+            optimizer.router_name = config_dict["router_name"]
+            optimizer.plot_save_path = config_dict["plot_save_path"]
+            optimizer.weight_colors = {float(k): v for k, v in config_dict["weight_colors"].items()}
+            
+            # Para AoA_ToA, aplica também o caminho de pré-computação
+            if sim_type == "aoa_toa":
+                optimizer.precomputation_save_path = config_dict["precomputation_save_path"]
 
             try:
                 G = optimizer.load_graph()
@@ -384,6 +483,7 @@ class MainApp(tk.Tk):
         # Desabilitar botões e habilitar cancelar durante pré-computação
         self.batch_button.config(state="disabled")
         self.interactive_button.config(state="disabled")
+        self.plantagrid_button.config(state="disabled")
         self.cancel_button.config(state="normal")
         self.cancel_event.clear()
         
@@ -485,6 +585,7 @@ class MainApp(tk.Tk):
                         error_label.pack(pady=50)
                         self.batch_button.config(state="normal")
                         self.interactive_button.config(state="normal")
+                        self.plantagrid_button.config(state="normal")
                         self.cancel_button.config(state="disabled")
                         logging.error(f"Erro na preparação da simulação interativa: {e}")
                     
@@ -501,6 +602,7 @@ class MainApp(tk.Tk):
                     error_label.pack(pady=50)
                     self.batch_button.config(state="normal")
                     self.interactive_button.config(state="normal")
+                    self.plantagrid_button.config(state="normal")
                     self.cancel_button.config(state="disabled")
                     logging.error(f"Erro na preparação da simulação interativa: {e}")
                 
@@ -540,6 +642,7 @@ class MainApp(tk.Tk):
                 
                 self.batch_button.config(state="normal")
                 self.interactive_button.config(state="normal")
+                self.plantagrid_button.config(state="normal")
                 self.cancel_button.config(state="disabled")
                 
             except Exception as e:
@@ -551,6 +654,7 @@ class MainApp(tk.Tk):
                 error_label.pack(pady=50)
                 self.batch_button.config(state="normal")
                 self.interactive_button.config(state="normal")
+                self.plantagrid_button.config(state="normal")
                 self.cancel_button.config(state="disabled")
 
         threading.Thread(target=setup_simulation_thread, daemon=True).start()
@@ -559,20 +663,28 @@ class MainApp(tk.Tk):
         """Chamado para limpar a UI após a simulação interativa ser fechada ou falhar ao carregar."""
         self.status_update_callback = None
         
-        self.interactive_controls_frame.pack_forget()
-        self.calc_coverage_button.config(state="disabled")
+        # Usa o método centralizado de limpeza
+        self.clear_interactive_view()
         
-        if self.interactive_canvas_container:
-            self.interactive_canvas_container.destroy()
-            self.interactive_canvas_container = None
         self.batch_button.config(state="normal")
         self.interactive_button.config(state="normal")
+        self.plantagrid_button.config(state="normal")
 
     def on_closing(self):
         if messagebox.askokcancel("Sair", "Deseja sair do simulador?"):
-            self.quit()
-            self.destroy()
-            os._exit(0)
+            try:
+                self.cancel_event.set()
+                
+                if self.simulation_thread and self.simulation_thread.is_alive():
+                    self.simulation_thread.join(timeout=2)
+                
+                self.quit()
+                self.destroy()
+                
+            except Exception as e:
+                logging.error(f"Erro ao fechar aplicação: {e}")
+            finally:
+                os._exit(0)
 
     def handle_status_update(self, log_message):
         """Intercepta mensagens de log para atualizar o status de loading durante simulações."""
@@ -619,14 +731,12 @@ class MainApp(tk.Tk):
         else:
             # Para simulação em lote, mostra diretamente a última linha do log
             # Remove o timestamp e nível do log para ficar mais limpo
-            import re
             clean_message = re.sub(r'^\[.*?\]\s*\w+\s*-\s*', '', log_message)
             if clean_message.strip():
                 self.status_update_callback(clean_message.strip())
     
     def _extract_progress_status(self, log_message):
         """Extrai informação de progresso dos logs de pré-computação."""
-        import re
         match = re.search(r'Progresso:\s*(\d+)%.*?(\d+(?:,\d+)*)/(\d+(?:,\d+)*)\s*pares', log_message)
         if match:
             percent = match.group(1)
@@ -857,6 +967,248 @@ class MainApp(tk.Tk):
                        font=('Segoe UI', 12),
                        foreground='#6c757d')
 
+    def show_plantagrid_interface(self):
+        """Mostra a interface do PlantaGrid na área de visualização"""
+        try:
+            # Limpa a área de visualização antes de iniciar
+            self.clear_interactive_view()
+            
+            self.plantagrid_canvas_container = ttk.Frame(self.view_frame)
+            self.plantagrid_canvas_container.pack(expand=True, fill="both")
+            
+            # Título
+            title_label = ttk.Label(self.plantagrid_canvas_container, 
+                                  text="Conversão de Planta Arquitetônica(Padronizada) em Grafo", 
+                                  font=("Helvetica", 16, "bold"))
+            title_label.pack(pady=(20, 30))
+            
+            # Frame principal para o formulário
+            form_frame = ttk.Frame(self.plantagrid_canvas_container)
+            form_frame.pack(pady=20)
+            
+            # Configurações do Grid
+            grid_section = ttk.LabelFrame(form_frame, text="Configurações do Grid", padding="15")
+            grid_section.pack(fill="x", pady=(0, 15))
+            
+            ttk.Label(grid_section, text="Tamanho da Célula (Distância entre nós):").pack(pady=(5, 2), anchor="w")
+            cell_size_frame = ttk.Frame(grid_section)
+            cell_size_frame.pack(fill="x", pady=(0, 5))
+            
+            self.plantagrid_cell_size_var = tk.StringVar()
+            self.create_placeholder_entry(cell_size_frame, self.plantagrid_cell_size_var, "5", width=10).pack(side="left", padx=(10, 5))
+            ttk.Label(cell_size_frame, text="(5 = 50cm, 10 = 1m)", foreground="gray").pack(side="left")
+            
+            # Peso das Atenuações
+            weights_section = ttk.LabelFrame(form_frame, text="Peso das Atenuações (dB/m)", padding="15")
+            weights_section.pack(fill="x", pady=(0, 15))
+            
+            # Frame para organizar os campos em 2 colunas
+            weights_grid = ttk.Frame(weights_section)
+            weights_grid.pack(fill="x")
+            
+            # Coluna esquerda
+            left_col = ttk.Frame(weights_grid)
+            left_col.pack(side="left", fill="x", expand=True, padx=(0, 10))
+            
+            ttk.Label(left_col, text="Concreto (Azul):").pack(pady=(5, 2), anchor="w")
+            self.plantagrid_concrete_weight_var = tk.StringVar()
+            self.create_placeholder_entry(left_col, self.plantagrid_concrete_weight_var, "16.67", width=15).pack(pady=(0, 5), anchor="w", padx=10)
+            
+            ttk.Label(left_col, text="Janela (Vermelho):").pack(pady=(5, 2), anchor="w")
+            self.plantagrid_window_weight_var = tk.StringVar()
+            self.create_placeholder_entry(left_col, self.plantagrid_window_weight_var, "7", width=15).pack(pady=(0, 5), anchor="w", padx=10)
+            
+            # Coluna direita
+            right_col = ttk.Frame(weights_grid)
+            right_col.pack(side="right", fill="x", expand=True)
+            
+            ttk.Label(right_col, text="Porta (Verde):").pack(pady=(5, 2), anchor="w")
+            self.plantagrid_door_weight_var = tk.StringVar()
+            self.create_placeholder_entry(right_col, self.plantagrid_door_weight_var, "6.81", width=15).pack(pady=(0, 5), anchor="w", padx=10)
+            
+            ttk.Label(right_col, text="MDF (Amarelo):").pack(pady=(5, 2), anchor="w")
+            self.plantagrid_mdf_weight_var = tk.StringVar()
+            self.create_placeholder_entry(right_col, self.plantagrid_mdf_weight_var, "4", width=15).pack(pady=(0, 5), anchor="w", padx=10)
+            
+            # Local para salvar
+            save_section = ttk.LabelFrame(form_frame, text="Local para Salvar", padding="15")
+            save_section.pack(fill="x", pady=(0, 15))
+            
+            ttk.Label(save_section, text="Pasta de destino:").pack(pady=(5, 2), anchor="w")
+            path_frame = ttk.Frame(save_section)
+            path_frame.pack(fill="x", pady=(0, 5), padx=10)
+            
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop") + os.sep
+            self.plantagrid_save_path_var = tk.StringVar(value=desktop_path)
+            ttk.Entry(path_frame, textvariable=self.plantagrid_save_path_var, width=40).pack(side="left", fill="x", expand=True)
+            ttk.Button(path_frame, text="Procurar", command=self.browse_plantagrid_save_path, width=10).pack(side="right", padx=(5, 0))
+            
+            # Botão de conversão
+            convert_button = ttk.Button(form_frame, text="Iniciar Conversão", command=self.run_plantagrid_conversion)
+            convert_button.pack(pady=20)
+            
+            # Inicializa valores padrão
+            self.plantagrid_cell_size_var.set("5")
+            self.plantagrid_concrete_weight_var.set("16.67")
+            self.plantagrid_window_weight_var.set("7")
+            self.plantagrid_door_weight_var.set("6.81")
+            self.plantagrid_mdf_weight_var.set("4")
+            
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao criar interface do PlantaGrid: {str(e)}")
+            logging.error(f"Erro ao criar interface do PlantaGrid: {e}")
+
+    def browse_plantagrid_save_path(self):
+        """Abre diálogo para selecionar pasta de salvamento do PlantaGrid"""
+        folder = filedialog.askdirectory(title="Selecione a pasta para salvar os arquivos")
+        if folder:
+            self.plantagrid_save_path_var.set(folder + os.sep)
+
+    def run_plantagrid_conversion(self):
+        """Executa a conversão do PlantaGrid"""
+        try:
+            image_path = filedialog.askopenfilename(
+                title="Selecione a imagem da planta arquitetônica",
+                filetypes=[("JPEG files", "*.jpg;*.jpeg"), ("PNG files", "*.png"), ("All files", "*.*")]
+            )
+            
+            if not image_path or not os.path.isfile(image_path):
+                return
+            
+            # Limpa apenas o conteúdo atual do PlantaGrid, não toda a visualização
+            if self.plantagrid_canvas_container:
+                for widget in self.plantagrid_canvas_container.winfo_children():
+                    widget.destroy()
+            
+            loading_frame = ttk.Frame(self.plantagrid_canvas_container)
+            loading_frame.pack(expand=True, fill="both")
+            
+            loading_label = ttk.Label(loading_frame, text="Convertendo Planta Arquitetônica...", 
+                                    font=("Helvetica", 16, "bold"))
+            loading_label.pack(pady=(100, 20))
+            
+            status_label = ttk.Label(loading_frame, text="Iniciando conversão...", 
+                                   font=("Helvetica", 12))
+            status_label.pack(pady=10)
+            
+            progress_bar = ttk.Progressbar(loading_frame, mode='indeterminate')
+            progress_bar.pack(pady=20)
+            progress_bar.start()
+            
+            self.update_idletasks()
+            
+            def update_plantagrid_status(message):
+                """Atualiza o status do loading na thread principal"""
+                def update():
+                    if status_label.winfo_exists():
+                        status_label.config(text=message)
+                self.after(0, update)
+            
+            previous_callback = self.status_update_callback
+            self.status_update_callback = update_plantagrid_status
+            
+            def conversion_thread():
+                """Thread para executar a conversão"""
+                try:
+                    config = {
+                        "cell_size": int(self.get_actual_value(self.plantagrid_cell_size_var, "5") or "5"),
+                        "weight_mapping": {
+                            "azul": float(self.get_actual_value(self.plantagrid_concrete_weight_var, "16.67") or "16.67"),
+                            "vermelho": float(self.get_actual_value(self.plantagrid_window_weight_var, "7") or "7"),
+                            "verde": float(self.get_actual_value(self.plantagrid_door_weight_var, "6.81") or "6.81"),
+                            "amarelo": float(self.get_actual_value(self.plantagrid_mdf_weight_var, "4") or "4"),
+                            "default": 1
+                        },
+                        "plot_save_path": self.plantagrid_save_path_var.get() or os.path.join(os.path.expanduser("~"), "Desktop") + os.sep
+                    }
+                    
+                    temp_config_path = os.path.join(os.path.dirname(__file__), "PlantaGrid", "temp_config.json")
+                    with open(temp_config_path, 'w', encoding='utf-8') as f:
+                        json.dump(config, f, indent=4)
+                    
+                    processor = JpegToGraph(temp_config_path)
+                    
+                    img_rgb = processor.load_image(image_path)
+                    hsv_img = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
+                    color_masks = processor.create_color_masks(hsv_img)
+                    blockage_mask = processor.create_blockage_mask(img_rgb)
+                    
+                    nodes = processor.generate_graph_nodes(img_rgb.shape, blockage_mask)
+                    G = processor.build_graph(nodes, hsv_img, blockage_mask)
+                    
+                    processor.visualize_graph(G)
+                    processor.export_graph(G)
+                    
+                    if os.path.exists(temp_config_path):
+                        os.remove(temp_config_path)
+                    
+                    def show_success():
+                        progress_bar.stop()
+                        loading_frame.destroy()
+                        success_label = ttk.Label(self.plantagrid_canvas_container, 
+                                                text="Conversão concluída com sucesso!", 
+                                                font=("Helvetica", 14, "bold"), 
+                                                foreground="green")
+                        success_label.pack(pady=(100, 20))
+                        
+                        info_label = ttk.Label(self.plantagrid_canvas_container, 
+                                             text=f"Arquivos salvos em: {processor.plot_save_path}", 
+                                             font=("Helvetica", 10))
+                        info_label.pack(pady=10)
+                        
+                        back_button = ttk.Button(self.plantagrid_canvas_container, 
+                                               text="Voltar", 
+                                               command=self.show_plantagrid_interface)
+                        back_button.pack(pady=20)
+                    
+                    self.after(0, show_success)
+                    
+                except Exception as e:
+                    def show_error():
+                        progress_bar.stop()
+                        loading_frame.destroy()
+                        error_label = ttk.Label(self.plantagrid_canvas_container, 
+                                              text=f"Erro na conversão: {str(e)}", 
+                                              font=("Helvetica", 12), 
+                                              foreground="red")
+                        error_label.pack(pady=(100, 20))
+                        
+                        back_button = ttk.Button(self.plantagrid_canvas_container, 
+                                               text="Voltar", 
+                                               command=self.show_plantagrid_interface)
+                        back_button.pack(pady=20)
+                        
+                        logging.error(f"Erro na conversão do PlantaGrid: {e}")
+                    
+                    self.after(0, show_error)
+                finally:
+                    self.status_update_callback = previous_callback
+            
+            threading.Thread(target=conversion_thread, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao iniciar conversão: {str(e)}")
+            logging.error(f"Erro ao iniciar conversão do PlantaGrid: {e}")
+
+    def setup_collapsible_styles(self):
+        """Configura estilos visuais para as seções expansíveis e remove bordas de foco"""
+        style = ttk.Style()
+        
+        style.configure('CollapsibleHeader.TFrame', 
+                       relief='flat', 
+                       borderwidth=0)
+        
+        style.configure('CollapsibleTitle.TLabel', 
+                       font=('Segoe UI', 11, 'bold'),
+                       foreground='#2c3e50')
+        
+        style.configure('CollapsibleArrow.TLabel', 
+                       font=('Segoe UI', 12),
+                       foreground='#6c757d')
+
 if __name__ == "__main__":
+    # Proteção crítica para multiprocessing em executáveis PyInstaller
+    multiprocessing.freeze_support()
+    
     app = MainApp()
     app.mainloop()

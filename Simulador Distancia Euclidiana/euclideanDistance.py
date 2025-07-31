@@ -1,6 +1,7 @@
 import os
 import zipfile
 import shutil
+import multiprocessing
 import networkx as nx
 import matplotlib
 matplotlib.use('Agg') # 'Agg' para o modo batch, a GUI cuidará do backend TkAgg
@@ -221,9 +222,9 @@ class RouterOptimizer:
         self.freq_mhz = config.get("freq_mhz", 2400)
         self.scale_factor = config.get("scale_factor", 2)
         self.distance_conversion = config.get("distance_conversion", 0.5)
-        self.max_iter = config.get("max_iter", 20)
+        self.max_iter = config.get("max_iter", 500)
         self.top_n = config.get("top_n", 10)
-        self.num_roteadores = config.get("num_roteadores", 1)
+        self.num_roteadores = config.get("num_roteadores", 2)
         self.router_name = config.get("router_name", "Roteador")
         self.max_workers = config.get("max_workers", os.cpu_count() or 2)
         self.avg_rssi_weight = config.get("avg_rssi_weight", 0.3)
@@ -794,5 +795,8 @@ class RouterOptimizer:
         logging.info(f"Resultados compactados em {zip_filename} para {num_roteadores} roteadores.")
 
 if __name__ == "__main__":
+    # Proteção crítica para multiprocessing em executáveis PyInstaller
+    multiprocessing.freeze_support()
+    
     optimizer = RouterOptimizer()
     optimizer.run_optimization()
